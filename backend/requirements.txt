@@ -1,0 +1,37 @@
+# --- Core API (from Vitalis / IBMIE) ---------------------------------------
+fastapi>=0.111,<1.0
+uvicorn[standard]>=0.30,<1.0
+pydantic>=2.0,<3.0
+python-dotenv>=1.0,<2.0
+python-multipart>=0.0.9,<1.0
+httpx>=0.27,<1.0
+sqlalchemy>=2.0,<3.0
+aiosqlite>=0.20,<1.0
+# Uncomment if you point DATABASE_URL at Postgres/Supabase instead of SQLite:
+# asyncpg>=0.29,<1.0
+
+# --- Document / OCR pipeline (from Vitalis / IBMIE) -------------------------
+pypdf>=4.0,<5.0
+pdf2image>=1.17,<2.0
+pytesseract>=0.3,<1.0
+Pillow>=10.0,<12.0
+# pdf2image and pytesseract also need system binaries:
+#   Debian/Ubuntu: sudo apt-get install poppler-utils tesseract-ocr
+#   macOS:         brew install poppler tesseract
+
+# --- Multi-agent orchestration / RAG (GGSIPU2617 extension) ----------------
+langgraph>=0.2,<0.3
+scikit-learn>=1.4,<2.0
+# httpx (already listed above) is also what services/llm_client.py uses to
+# call Gemini/OpenAI/Groq directly over HTTP - no extra SDK needed.
+
+# --- Voice pipeline (from MAITRI) - all optional, app degrades gracefully --
+numpy>=2.0,<3
+faster-whisper>=1.2,<2
+# faster-whisper downloads its model from Hugging Face on first use and
+# caches it - needs internet access once, then works offline.
+piper-tts>=1.6,<2
+# Also requires a Piper voice model - see scripts/download_models.py
+# (PIPER_VOICE_MODEL / PIPER_VOICE_CONFIG in .env).
+python-jose[cryptography]>=3.3,<4.0
+passlib>=1.7,<2.0

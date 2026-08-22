@@ -1,0 +1,400 @@
+"""
+Node functions for the LangGraph multi-agent graph (see graph.py).
+
+Each specialist node corresponds to one row of the MAS - Agent Specs
+sheet. To keep the graph genuinely inspectable (rather than "a set of
+unrelated LLM prompts", which GGSIPU2617_Vitalis_Features_and_Recommended_
+Architecture.pdf section 14 explicitly warns against), every node:
+  1. reads only the state fields it needs (a stand-in for
+     MAS - Retrieval Rules R010's "patient context isolation"),
+  2. appends a structured entry to state["event_log"] (auditability), and
+  3. returns the whole state dict per LangGraph convention.
+"""
+from __future__ import annotations
+
+from datetime import date, timedelta
+from typing import Any
+
+from app.agents import risk_engine
+from app.agents.emergency import build_escalation_reply, check_emergency
+from app.agents.state import AGENT_ROSTER, GraphState
+from app.core.logging import get_logger
+from app.services import rag_service
+from app.services.llm_client import LLMMessage, complete_json
+
+LOGGER = get_logger(__name__)
+
+# Maps a router agent label to the RAG domain hint that best matches it,
+# and to which specialist node the graph should dispatch to.
+_AGENT_TO_DOMAIN = {
+    "Symptom Assessment": None,  # inferred from message keywords, see _infer_domain
+    "Risk Prediction": None,
+    "Nutrition Planning": "Nutrition",
+    "Mental Wellness Support": "Mental Wellbeing",
+    "Laboratory Report Interpretation": None,
+    "Clinical Knowledge Retrieval": None,
+}
+
+_DOMAIN_KEYWORDS = {
+    "PCOS": ["pcos", "polycystic", "irregular period", "irregular cycle"],
+    "Endometriosis": ["endometriosis", "pelvic pain"],
+    "Pregnancy": ["pregnant", "pregnancy", "trimester", "antenatal"],
+    "Postpartum": ["postpartum", "postnatal", "after delivery", "after birth"],
+    "Menopause": ["menopause", "perimenopause", "hot flash"],
+    "Fertility": ["fertility", "infertility", "trying to conceive", "ovulation"],
+    "Menstrual Health": ["period", "cycle", "menstru"],
+    "Mental Wellbeing": ["stress", "anxious", "mood", "depress", "sad", "overwhelmed"],
+    "Chronic Conditions": ["diabetes", "hypertension", "blood pressure", "cholesterol"],
+}
+
+
+def _infer_domain(message: str) -> str | None:
+    lowered = message.lower()
+    for domain, keywords in _DOMAIN_KEYWORDS.items():
+        if any(kw in lowered for kw in keywords):
+            return domain
+    return None
+
+
+def _log(state: GraphState, agent: str, output_summary: str, handoff_to: str | None = None) -> None:
+    state.setdefault("event_log", [])
+    state["event_log"].append(
+        {
+            "agent": agent,
+            "input_summary": state.get("message", "")[:300],
+            "output_summary": output_summary[:500],
+            "handoff_to": handoff_to,
+            "urgent": bool(state.get("urgent")),
+            "escalation_level": state.get("escalation_level"),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Emergency Escalation Agent (always runs first - see emergency.py docstring)
+# ---------------------------------------------------------------------------
+
+def node_emergency_check(state: GraphState) -> GraphState:
+    check = check_emergency(state.get("message", ""))
+    if check.triggered:
+        state["urgent"] = True
+        state["is_crisis"] = check.is_crisis
+        state["escalation_level"] = "L3"
+        state["router_agent"] = "Emergency Escalation"
+        state["reply"] = build_escalation_reply(check)
+        _log(state, "Emergency Escalation", f"red flag matched: {check.matched_keyword}")
+    else:
+        state["urgent"] = False
+        state["is_crisis"] = False
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Router (= a lightweight version of what MAS calls agent handoff logic)
+# ---------------------------------------------------------------------------
+
+ROUTER_SYSTEM_PROMPT = (
+    "You are the orchestrator for NARI's women's-health multi-agent system. Specialist agents: "
+    + ", ".join(a for a in AGENT_ROSTER if a != "Emergency Escalation")
+    + ". Pick the SINGLE most relevant agent for the user's message. "
+    'Respond ONLY as JSON: {"agent": string, "urgent": boolean, "reason": string}.'
+)
+
+
+def node_router(state: GraphState) -> GraphState:
+    result = complete_json(
+        ROUTER_SYSTEM_PROMPT,
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.1,
+        mock_key="router",
+        mock_context={"message": state.get("message", "")},
+    )
+    agent = result.get("agent")
+    if agent not in AGENT_ROSTER or agent == "Emergency Escalation":
+        agent = "Clinical Knowledge Retrieval"
+    state["router_agent"] = agent
+    state["router_reason"] = str(result.get("reason", ""))
+    state["domain_hint"] = state.get("domain_hint") or _infer_domain(state.get("message", ""))
+    _log(state, "Router", f"routed to {agent} ({state['router_reason']})", handoff_to=agent)
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Clinical Knowledge / RAG Agent - runs for every non-emergency turn so
+# every specialist has evidence available (MAS - Agent Handoffs: "Any agent
+# needing medical evidence" hands off here).
+# ---------------------------------------------------------------------------
+
+def node_rag(state: GraphState) -> GraphState:
+    query = state.get("message", "")
+    result = rag_service.retrieve(
+        query,
+        domain_hint=state.get("domain_hint"),
+        population_hint=state.get("population_hint"),
+        top_k=3,
+    )
+    state["evidence"] = [
+        {
+            "chunk_id": it.chunk_id,
+            "source_id": it.source_id,
+            "domain": it.domain,
+            "text": it.text,
+            "similarity": it.similarity,
+            "source_title": it.source_title,
+            "source_url": it.source_url,
+            "evidence_tier": it.evidence_tier,
+            "limitations": it.limitations,
+        }
+        for it in result.items
+    ]
+    state["evidence_note"] = result.note
+    _log(state, "Clinical Knowledge / RAG", f"{len(state['evidence'])} evidence item(s), sufficient={result.sufficient}")
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Specialist agents
+# ---------------------------------------------------------------------------
+
+def _evidence_context(state: GraphState) -> dict[str, Any]:
+    return {"evidence": state.get("evidence", []), "profile": state.get("profile")}
+
+
+def node_symptom_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Symptom Assessment Agent. Normalize the reported symptom, ask targeted follow-up "
+        "questions, and never diagnose. Reply as JSON: "
+        '{"reply": string, "follow_up_questions": [string], "urgency_flag": "monitor"|"none"}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.4,
+        mock_key="symptom_agent",
+        mock_context={"message": state.get("message", "")},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Symptom Assessment", state["reply"])
+    return state
+
+
+def node_lab_agent(state: GraphState) -> GraphState:
+    metrics = (state.get("structured_context") or {}).get("recent_lab_metrics", [])
+    result = complete_json(
+        "You are the Laboratory Report Analyzer. Explain lab results in plain language, in context, "
+        'without diagnosing. Reply as JSON: {"reply": string, "attention_flag": boolean}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.2,
+        mock_key="lab_agent",
+        mock_context={"metrics": metrics},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Laboratory Report Interpretation", state["reply"])
+    return state
+
+
+def node_nutrition_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Nutrition Agent. Give personalized, practical nutrition guidance using the "
+        'user profile and evidence provided. Reply as JSON: {"reply": string, "goal": string}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.4,
+        mock_key="nutrition_agent",
+        mock_context=_evidence_context(state),
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Nutrition Planning", state["reply"])
+    return state
+
+
+def node_mental_wellness_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Mental Wellness Agent. Be supportive, never diagnose, and set escalation_flag true "
+        'only for crisis language. Reply as JSON: {"reply": string, "escalation_flag": boolean}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.5,
+        mock_key="mental_wellness_agent",
+        mock_context={"message": state.get("message", "")},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Mental Wellness Support", state["reply"])
+    return state
+
+
+def node_medication_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Medication & Adherence Agent. Never suggest starting/stopping/changing a dose "
+        'yourself. Reply as JSON: {"reply": string}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.3,
+        mock_key="medication_agent",
+        mock_context={},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Medication & Adherence", state["reply"])
+    return state
+
+
+def node_lifestyle_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Lifestyle Coaching Agent. Suggest one small, achievable behavior change based on "
+        'sleep/activity/stress context. Reply as JSON: {"reply": string}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.4,
+        mock_key="lifestyle_agent",
+        mock_context={},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Lifestyle Coaching", state["reply"])
+    return state
+
+
+def node_appointment_agent(state: GraphState) -> GraphState:
+    result = complete_json(
+        "You are the Appointment Management Agent. Help coordinate a clinician visit. Reply as JSON: "
+        '{"reply": string}.',
+        [LLMMessage("user", state.get("message", ""))],
+        temperature=0.3,
+        mock_key="appointment_agent",
+        mock_context={},
+    )
+    state["reply"] = str(result.get("reply", ""))
+    _log(state, "Appointment Management", state["reply"])
+    return state
+
+
+def node_document_agent(state: GraphState) -> GraphState:
+    state["reply"] = (
+        "I can extract structured information once a document is uploaded via Reports - medications, "
+        "dates and values will be added to your timeline automatically."
+    )
+    _log(state, "Medical Document Intelligence", state["reply"])
+    return state
+
+
+def node_clinical_knowledge_agent(state: GraphState) -> GraphState:
+    evidence = state.get("evidence", [])
+    if not evidence:
+        state["reply"] = state.get("evidence_note") or (
+            "I don't have enough reliable evidence in the current knowledge base to safely answer this - "
+            "please raise it with a clinician."
+        )
+    else:
+        top = evidence[0]
+        citation = f" (source: {top['source_title']})" if top.get("source_title") else ""
+        state["reply"] = f"{top['text']}{citation} This is general information, not a diagnosis."
+    _log(state, "Clinical Knowledge Retrieval", state["reply"])
+    return state
+
+
+_SPECIALIST_NODES = {
+    "Symptom Assessment": node_symptom_agent,
+    "Laboratory Report Interpretation": node_lab_agent,
+    "Nutrition Planning": node_nutrition_agent,
+    "Mental Wellness Support": node_mental_wellness_agent,
+    "Medication & Adherence": node_medication_agent,
+    "Lifestyle Coaching": node_lifestyle_agent,
+    "Appointment Management": node_appointment_agent,
+    "Medical Document Intelligence": node_document_agent,
+    "Clinical Knowledge Retrieval": node_clinical_knowledge_agent,
+    "Risk Prediction": node_symptom_agent,  # symptom-style intake; risk_check node does the actual scoring
+}
+
+
+def dispatch_specialist(state: GraphState) -> str:
+    """Conditional-edge selector used by graph.py."""
+    agent = state.get("router_agent", "Clinical Knowledge Retrieval")
+    return agent if agent in _SPECIALIST_NODES else "Clinical Knowledge Retrieval"
+
+
+# ---------------------------------------------------------------------------
+# Risk Prediction Agent - see risk_engine.py for why this is heuristic, not
+# a trained model.
+# ---------------------------------------------------------------------------
+
+def node_risk_check(state: GraphState) -> GraphState:
+    ctx = state.get("structured_context") or {}
+    domain = state.get("domain_hint")
+    output = None
+
+    if domain == "PCOS":
+        output = risk_engine.evaluate_pcos_pattern(
+            cycle_lengths_days=ctx.get("cycle_lengths_days"), symptoms=ctx.get("symptoms")
+        )
+    elif domain == "Endometriosis":
+        output = risk_engine.evaluate_endometriosis_pattern(
+            pain_severity=ctx.get("pain_severity"),
+            pain_cycle_related=bool(ctx.get("pain_cycle_related")),
+            heavy_bleeding=bool(ctx.get("heavy_bleeding")),
+            bowel_or_urinary_symptoms=bool(ctx.get("bowel_or_urinary_symptoms")),
+        )
+    elif domain == "Mental Wellbeing" and state.get("router_agent") == "Mental Wellness Support":
+        output = risk_engine.evaluate_mental_wellbeing_trend(
+            mood_scores=ctx.get("mood_scores"), stress_scores=ctx.get("stress_scores"), crisis_language=False
+        )
+    elif ctx.get("recent_lab_metrics"):
+        output = risk_engine.evaluate_lab_trend_flag(ctx["recent_lab_metrics"])
+
+    if output and output.fired:
+        state["risk_signal"] = {
+            "domain": output.domain,
+            "signal_type": output.signal_type,
+            "level": output.level,
+            "factors": output.factors,
+            "confidence_note": output.confidence_note,
+            "next_step": output.next_step,
+            "when_to_seek_care": output.when_to_seek_care,
+            "model_version": "rule-based-heuristic-v1",
+        }
+        if output.level in {"L2", "L3"}:
+            state["escalation_level"] = output.level
+        _log(state, "Risk Prediction", f"{output.domain} pattern flag fired at {output.level}")
+    else:
+        state["risk_signal"] = None
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Care Plan Agent - combines everything into one explainable structure.
+# ---------------------------------------------------------------------------
+
+def node_careplan(state: GraphState) -> GraphState:
+    risk = state.get("risk_signal")
+    evidence = state.get("evidence", [])
+    plan: dict[str, Any] = {
+        "summary": state.get("reply", ""),
+        "agent": state.get("router_agent"),
+        "observed_factors": risk["factors"] if risk else [],
+        "why_flagged": (
+            f"Pattern-based flag ({risk['signal_type']}) at escalation level {risk['level']} - "
+            f"{risk['confidence_note']}"
+            if risk
+            else None
+        ),
+        "evidence": [
+            {"text": e["text"], "source": e["source_title"], "url": e.get("source_url")} for e in evidence[:2]
+        ],
+        "next_step": risk["next_step"] if risk else None,
+        "when_to_seek_care": risk["when_to_seek_care"] if risk else None,
+    }
+    state["care_plan"] = plan
+    _log(state, "Care Plan", "composed explainable care-plan card")
+    return state
+
+
+# ---------------------------------------------------------------------------
+# Follow-up Care Agent - decides whether continuity follow-up is warranted.
+# Actual DB write happens in the calling service (agents/graph.py callers),
+# this node only decides the *intent*.
+# ---------------------------------------------------------------------------
+
+def node_followup(state: GraphState) -> GraphState:
+    risk = state.get("risk_signal")
+    if risk and risk["level"] in {"L1", "L2"}:
+        due = date.today() + timedelta(days=7 if risk["level"] == "L2" else 14)
+        state["follow_up"] = {
+            "reason": f"Check whether the {risk['domain']} pattern noted on {date.today().isoformat()} has changed.",
+            "due_date": due.isoformat(),
+            "related_agent": "Risk Prediction",
+        }
+        _log(state, "Follow-up Care", f"follow-up scheduled for {due.isoformat()}")
+    else:
+        state["follow_up"] = None
+    return state
