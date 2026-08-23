@@ -4,10 +4,9 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator, CHAR
-from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 
 class Base(DeclarativeBase):
     pass
@@ -363,7 +362,8 @@ class AgentEventLog(Base):
     escalation_level: Mapped[str | None] = mapped_column(String(5), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
-    class MedicationReminder(Base):
+
+class MedicationReminder(Base):
     """A patient's recurring medication reminder, with a per-day taken/not
     log so the frontend can show "taken today" without a separate table."""
 

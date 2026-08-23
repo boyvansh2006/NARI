@@ -83,16 +83,15 @@ class _EmbeddingBackend:
 
         scored: list[tuple[float, dict]] = []
         for chunk, sim in zip(self._chunks, sims):
-            score = float(sim)
-            # R001: domain filter - boost same-domain chunks rather than
-            # hard-excluding, so a near-miss domain can still surface if
-            # nothing else is relevant.
+            raw_sim = float(sim)
+            if raw_sim < 0.08:
+                continue
+            score = raw_sim
             if domain_hint and chunk["domain"].lower() == domain_hint.lower():
-                score += 0.15
-            # R002: population filter.
+                score += 0.20
             if population_hint and population_hint.lower() not in [p.lower() for p in chunk["population"]]:
                 if "all" not in chunk["population"]:
-                    score -= 0.1
+                    score -= 0.05
             scored.append((score, chunk))
 
         scored.sort(key=lambda pair: pair[0], reverse=True)
@@ -113,9 +112,6 @@ class _EmbeddingBackend:
                     limitations=source.get("limitations"),
                 )
             )
-        # R005: rank official/higher-tier evidence above lower-tier evidence
-        # once relevance is roughly comparable.
-        items.sort(key=lambda item: (item.evidence_tier, -item.similarity))
         return items
 
 

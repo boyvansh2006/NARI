@@ -9,7 +9,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.activity import router as activity_router
+from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.reminders import router as reminders_router
 from app.api.reports import router as reports_router
 from app.api.voice import router as voice_router
 from app.core.config import get_settings
@@ -17,12 +20,6 @@ from app.core.exceptions import NARIError, AarogyaError
 from app.core.logging import configure_logging, get_logger
 from app.database.database import init_db
 from app.services.voice_service import get_voice_service
-from app.api.activity import router as activity_router
-from app.api.auth import router as auth_router
-from app.api.chat import router as chat_router
-from app.api.reminders import router as reminders_router
-from app.api.reports import router as reports_router
-from app.api.voice import router as voice_router
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -78,12 +75,9 @@ async def root() -> dict[str, str]:
     return {"name": settings.app_name, "status": "running", "docs": "/docs"}
 
 
-app.include_router(reports_router)
-app.include_router(chat_router)
-app.include_router(voice_router)
 app.include_router(auth_router)
-app.include_router(reports_router)
 app.include_router(chat_router)
+app.include_router(reports_router)
 app.include_router(voice_router)
 app.include_router(reminders_router)
 app.include_router(activity_router)
