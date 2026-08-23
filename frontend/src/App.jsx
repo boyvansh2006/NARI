@@ -331,12 +331,37 @@ export default function NARIApp() {
 
   const speak = (text) => {
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const clean = text.replace(/[*_#`]/g, "").slice(0, 320);
-    const u = new SpeechSynthesisUtterance(clean);
-    u.rate = 1.0;
-    u.pitch = 1.05;
-    window.speechSynthesis.speak(u);
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      const clean = text
+        .replace(/[*_#`•\-]/g, "")
+        .replace(/https?:\/\/\S+/g, "")
+        .slice(0, 350)
+        .trim();
+      if (!clean) return;
+
+      setTimeout(() => {
+        const u = new SpeechSynthesisUtterance(clean);
+        u.rate = 1.0;
+        u.pitch = 1.0;
+        const voices = window.speechSynthesis.getVoices() || [];
+        const englishVoice =
+          voices.find((v) => v.lang && v.lang.startsWith("en") && !v.name.includes("whisper")) ||
+          voices[0];
+        if (englishVoice) {
+          u.voice = englishVoice;
+        }
+        u.onerror = (e) => {
+          console.warn("Speech synthesis warning:", e);
+        };
+        window.speechSynthesis.speak(u);
+      }, 70);
+    } catch (err) {
+      console.warn("TTS error:", err);
+    }
   };
 
   const copyMessage = (id, text) => {
