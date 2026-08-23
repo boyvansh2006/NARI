@@ -38,6 +38,10 @@ class Settings(BaseModel):
     log_level: str = Field(default="INFO")
     max_upload_size_mb: int = Field(default=25, ge=1)
     request_timeout_seconds: float = Field(default=120.0, gt=0)
+    # Optional system-binary locations used by the report OCR pipeline.
+    # These are especially useful on Windows, where they are not usually on PATH.
+    tesseract_cmd: str = Field(default="")
+    poppler_path: str = Field(default="")
 
     # Lab report / chat LLM (from Vitalis's Groq integration)
     groq_api_key: str = Field(default="")
@@ -54,6 +58,9 @@ class Settings(BaseModel):
     openai_model: str = Field(default="gpt-4o-mini")
     gemini_api_key: str = Field(default="")
     gemini_model: str = Field(default="gemini-1.5-flash")
+    # Mistral AI (https://console.mistral.ai/api-keys)
+    mistral_api_key: str = Field(default="")
+    mistral_model: str = Field(default="mistral-small-2506")
 
     # Auth (see core/security.py). Falls back to a fixed dev secret if unset.
     jwt_secret_key: str = Field(default="")
@@ -101,6 +108,8 @@ def get_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         max_upload_size_mb=int(os.getenv("MAX_UPLOAD_SIZE_MB", "25")),
         request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "120")),
+        tesseract_cmd=os.getenv("TESSERACT_CMD", ""),
+        poppler_path=os.getenv("POPPLER_PATH", ""),
         groq_api_key=os.getenv("GROQ_API_KEY", ""),
         groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
         llm_provider=os.getenv("LLM_PROVIDER", "auto"),
@@ -108,6 +117,8 @@ def get_settings() -> Settings:
         openai_model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-1.5-flash"),
+        mistral_api_key=os.getenv("MISTRAL_API_KEY", ""),
+        mistral_model=os.getenv("MISTRAL_MODEL", "mistral-small-2506"),
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", ""),
         whisper_model_size=os.getenv("WHISPER_MODEL_SIZE", "small.en"),
         whisper_device=os.getenv("WHISPER_DEVICE", "cpu"),

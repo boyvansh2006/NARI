@@ -69,7 +69,93 @@ export async function listReports(page = 1, pageSize = 20) {
   return handleJson(res); // { items, pagination }
 }
 
+/** Fetch a report with the complete structured OCR result. */
+export async function getReport(reportId) {
+  const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`);
+  return handleJson(res); // { message, report: { report_json: { metrics: [...] } } }
+}
+
 export async function deleteReport(reportId) {
   const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`, { method: "DELETE" });
+  return handleJson(res);
+}
+
+
+const TOKEN_KEY = "nari_token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+export function setToken(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+function authHeaders() {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+/** Auth */
+export async function registerUser(email, password, fullName) {
+  const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, full_name: fullName }),
+  });
+  return handleJson(res); // { access_token, user }
+}
+
+export async function loginUser(email, password) {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  return handleJson(res); // { access_token, user }
+}
+
+/** Medication reminders (requires auth) */
+export async function fetchReminders() {
+  const res = await fetch(`${API_BASE}/api/v1/reminders`, { headers: authHeaders() });
+  return handleJson(res);
+}
+export async function createReminderApi(data) {
+  const res = await fetch(`${API_BASE}/api/v1/reminders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return handleJson(res);
+}
+export async function toggleReminderApi(id) {
+  const res = await fetch(`${API_BASE}/api/v1/reminders/${id}/toggle`, {
+    method: "POST",
+    headers: authHeaders(),
+  });
+  return handleJson(res);
+}
+export async function deleteReminderApi(id) {
+  const res = await fetch(`${API_BASE}/api/v1/reminders/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return handleJson(res);
+}
+
+/** Daily activity (requires auth) */
+export async function getTodayActivity() {
+  const res = await fetch(`${API_BASE}/api/v1/activity/today`, { headers: authHeaders() });
+  return handleJson(res);
+}
+export async function updateTodayActivity(patch) {
+  const res = await fetch(`${API_BASE}/api/v1/activity/today`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  return handleJson(res);
+}
+export async function getActivityHistory(days = 7) {
+  const res = await fetch(`${API_BASE}/api/v1/activity/history?days=${days}`, { headers: authHeaders() });
   return handleJson(res);
 }

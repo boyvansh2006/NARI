@@ -20,10 +20,12 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Literal
 
 import httpx
+import pdfplumber
 import pytesseract
 from PIL import Image
 from pdf2image import convert_from_bytes
@@ -47,6 +49,22 @@ SYSTEM_PROMPT = (
 
 DocumentKind = Literal["pdf", "image"]
 
+# The local extractor makes uploaded reports useful even when a cloud LLM
+# is deliberately not configured. It handles common lab-report rows such as
+# "Hemoglobin 11.2 g/dL Low" and preserves unknown tests rather than only
+# extracting a small hand-picked biomarker set.
+METRIC_LINE_PATTERN = re.compile(
+    r"^\s*(?P<name>[A-Za-z][A-Za-z0-9 ()/._%+-]{1,80}?)\s*(?:[:=]|\s+)\s*"
+    r"(?P<value>[<>≤≥]?\s*\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?|"
+    r"(?:negative|positive|reactive|non[- ]?reactive))"
+    r"(?:\s+(?P<unit>[A-Za-zµμ/%^0-9.×x*/-]{1,24}))?\s*(?P<tail>.*)$",
+    re.IGNORECASE,
+)
+REFERENCE_RANGE_PATTERN = re.compile(r"(?:ref(?:erence)?\s*(?:range)?\s*[:=]?)?\s*(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+FLAG_PATTERN = re.compile(r"\b(high|low|normal|h|l|n)\b", re.IGNORECASE)
+NON_METRIC_LABELS = {"test", "test name", "investigation", "result", "results", "parameter", "units", "reference range", "bio reference range"}
+NUMERIC_RESULT_PATTERN = re.compile(r"^[<>≤≥]?\s*\d+(?:[.,]\d+)?$")
+
 
 class MedicalMetric(BaseModel):
     biomarker_name: str = Field(
@@ -62,6 +80,10 @@ class MedicalMetric(BaseModel):
     unit: str | None = Field(
         default=None,
         description="The measurement unit associated with the value (e.g., g/dL, mIU/L, ng/mL).",
+    )
+    reference_range: str | None = Field(
+        default=None,
+        description="The reference interval printed on the report, when available.",
     )
     status: Literal["NORMAL", "HIGH", "LOW", "UNSPECIFIED"] = Field(
         description="The clinical status flag relative to standard reference ranges."
@@ -99,6 +121,9 @@ class ParserService:
 
 def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
     path = Path(file_path)
+    settings = get_settings()
+    if settings.tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
 
     if kind == "image":
         try:
@@ -128,7 +153,7 @@ def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
     ocr_pages: list[str] = []
     try:
         file_bytes = path.read_bytes()
-        images = convert_from_bytes(file_bytes, dpi=150)
+        images = convert_from_bytes(file_bytes, dpi=200, poppler_path=settings.poppler_path or None)
         for i, image in enumerate(images):
             page_text = pytesseract.image_to_string(image)
             if page_text.strip():
@@ -138,6 +163,160 @@ def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
         raise ValueError("Failed to process scanned document text layers.") from exc
 
     return "\n\n".join(ocr_pages).strip()
+
+
+def _group_words_by_line(words: list[dict[str, Any]], tolerance: float = 3.0) -> list[list[dict[str, Any]]]:
+    """Group positioned PDF words into visual lines, preserving column order."""
+    lines: list[list[dict[str, Any]]] = []
+    for word in sorted(words, key=lambda item: (float(item["top"]), float(item["x0"]))):
+        if not lines or abs(float(lines[-1][0]["top"]) - float(word["top"])) > tolerance:
+            lines.append([word])
+        else:
+            lines[-1].append(word)
+    return lines
+
+
+def _joined(words: list[dict[str, Any]]) -> str:
+    return " ".join(word["text"] for word in sorted(words, key=lambda item: float(item["x0"]))).strip()
+
+
+def _table_layout(lines: list[list[dict[str, Any]]]) -> tuple[float, float, float, float] | None:
+    """Find a conventional lab-table header such as Test Name | Results | Units | Reference Range."""
+    for line in lines:
+        labels = [(word["text"].lower().strip(".:"), float(word["x0"]), float(word["top"])) for word in line]
+        result = next((item for item in labels if item[0].startswith("result")), None)
+        unit = next((item for item in labels if item[0].startswith("unit")), None)
+        reference = next((item for item in labels if item[0].startswith(("bio", "ref", "reference"))), None)
+        if result and unit and reference and result[1] < unit[1] < reference[1]:
+            return result[1], unit[1], reference[1], result[2]
+    return None
+
+
+def extract_pdf_table_metrics(file_path: str | Path) -> list[dict[str, Any]]:
+    """Extract native PDF lab tables using their printed column positions."""
+    metrics: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str | None]] = set()
+    active_layout: tuple[float, float, float] | None = None
+
+    try:
+        with pdfplumber.open(str(file_path)) as pdf:
+            for page in pdf.pages:
+                lines = _group_words_by_line(page.extract_words())
+                discovered = _table_layout(lines)
+                header_top: float | None = None
+                if discovered:
+                    result_x, unit_x, reference_x, header_top = discovered
+                    active_layout = (result_x, unit_x, reference_x)
+                if not active_layout:
+                    continue
+
+                result_x, unit_x, reference_x = active_layout
+                for line in lines:
+                    line_top = float(line[0]["top"])
+                    if header_top is not None and line_top <= header_top + 8:
+                        continue
+                    result_words = [
+                        word for word in line
+                        if result_x - 18 <= float(word["x0"]) < unit_x - 10
+                        and NUMERIC_RESULT_PATTERN.fullmatch(word["text"].strip())
+                    ]
+                    if not result_words:
+                        continue
+
+                    name = _joined([word for word in line if float(word["x0"]) < result_x - 18]).strip(" .:-")
+                    if (
+                        not name
+                        or len(name) > 72
+                        or len(name.split()) > 8
+                        or name.lower() in NON_METRIC_LABELS
+                        or name.lower().startswith(("page ", "report status", "test report"))
+                    ):
+                        continue
+
+                    value = _joined(result_words)
+                    unit = _joined([word for word in line if unit_x - 12 <= float(word["x0"]) < reference_x - 8]) or None
+                    reference_range = _joined([word for word in line if float(word["x0"]) >= reference_x - 8]) or None
+                    key = (name.lower(), value.lower(), unit.lower() if unit else None)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    metrics.append({
+                        "biomarker_name": name,
+                        "extracted_abbreviation": None,
+                        "value": value,
+                        "unit": unit,
+                        "reference_range": reference_range,
+                        "status": _status_from_tail(value, reference_range or ""),
+                    })
+    except Exception as exc:
+        LOGGER.warning("Could not extract positioned PDF table", extra={"error": str(exc)})
+    return metrics
+
+
+def _decimal(value: str) -> Decimal | None:
+    try:
+        return Decimal(value.replace(",", ".").replace("≤", "").replace("≥", "").replace("<", "").replace(">", "").strip())
+    except (InvalidOperation, AttributeError):
+        return None
+
+
+def _status_from_tail(value: str, tail: str) -> str:
+    flag = FLAG_PATTERN.search(tail)
+    if flag:
+        return {"high": "HIGH", "h": "HIGH", "low": "LOW", "l": "LOW", "normal": "NORMAL", "n": "NORMAL"}[flag.group(1).lower()]
+
+    value_number = _decimal(value.split("-")[0])
+    range_match = REFERENCE_RANGE_PATTERN.search(tail)
+    if value_number is not None and range_match:
+        low, high = _decimal(range_match.group(1)), _decimal(range_match.group(2))
+        if low is not None and high is not None:
+            if value_number < low:
+                return "LOW"
+            if value_number > high:
+                return "HIGH"
+            return "NORMAL"
+    return "UNSPECIFIED"
+
+
+def extract_metrics_locally(report_text: str) -> list[dict[str, Any]]:
+    """Best-effort structured extraction for text-layer PDFs and OCR output.
+
+    It intentionally avoids medical reference assumptions. A value is only
+    flagged when the report itself provides a flag or a numeric reference range.
+    """
+    metrics: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str | None]] = set()
+    for raw_line in report_text.splitlines():
+        line = re.sub(r"\s+", " ", raw_line).strip(" |")
+        match = METRIC_LINE_PATTERN.match(line)
+        if not match:
+            continue
+        name = re.sub(r"\s+", " ", match.group("name")).strip(" .:-")
+        if name.lower() in NON_METRIC_LABELS or len(name) < 2:
+            continue
+        value = re.sub(r"\s+", " ", match.group("value")).strip()
+        unit = (match.group("unit") or "").strip() or None
+        tail = match.group("tail") or ""
+        # A bare number after the result is much more likely to be the start
+        # of a reference range than a unit (e.g. "Ferritin 9 15 - 150").
+        if unit and re.fullmatch(r"\d+(?:[.,]\d+)?", unit):
+            tail = f"{unit} {tail}".strip()
+            unit = None
+        key = (name.lower(), value.lower(), unit.lower() if unit else None)
+        if key in seen:
+            continue
+        seen.add(key)
+        metrics.append(
+            {
+                "biomarker_name": name,
+                "extracted_abbreviation": None,
+                "value": value,
+                "unit": unit,
+                "reference_range": tail or None,
+                "status": _status_from_tail(value, tail),
+            }
+        )
+    return metrics
 
 
 def build_extraction_prompt(report_text: str) -> str:
@@ -244,22 +423,20 @@ def parse_medical_document(file_path: str | Path, kind: DocumentKind) -> LabRepo
     if not report_text:
         raise ValueError("No readable text was extracted from the document")
 
+    # Prefer the report's visual table structure when it exists. This avoids
+    # pypdf's column-interleaving issue on multi-page pathology reports.
+    if kind == "pdf":
+        table_metrics = extract_pdf_table_metrics(path)
+        if table_metrics:
+            LOGGER.info("Extracted structured metrics from positioned PDF table", extra={"metrics_found": len(table_metrics)})
+            return LabReportExtractionSchema(patient_demographics_found=False, metrics=table_metrics)
+
     if not settings.groq_api_key:
-        # Graceful degradation: no LLM key configured, so skip structuring
-        # and surface the raw OCR/text-layer output as a single metric
-        # instead of failing the whole upload.
-        LOGGER.warning("GROQ_API_KEY not set - returning raw extracted text without structuring")
+        metrics = extract_metrics_locally(report_text)
+        LOGGER.info("GROQ_API_KEY not set - used local structured lab extraction", extra={"metrics_found": len(metrics)})
         return LabReportExtractionSchema(
             patient_demographics_found=False,
-            metrics=[
-                {
-                    "biomarker_name": "Raw extracted text (set GROQ_API_KEY for structured extraction)",
-                    "extracted_abbreviation": None,
-                    "value": report_text[:1500],
-                    "unit": None,
-                    "status": "UNSPECIFIED",
-                }
-            ],
+            metrics=metrics,
         )
 
     content = call_groq(

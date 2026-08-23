@@ -4,22 +4,26 @@ import {
   Volume2, VolumeX, X, AlertTriangle, CheckCircle2, Activity, Calendar,
   TrendingDown, Droplets, Sparkles, ChevronRight, User, Loader2,
   HeartPulse, Stethoscope, Network, ShieldCheck, ClipboardCheck, BookOpen,
-  Users, Brain, Target, Info
+  Users, Brain, Target, Info, LogOut, Pill, UserRound
 } from "lucide-react";
-import { sendChatMessage, voiceConverse, getVoiceStatus, uploadReport, listReports } from "./api.js";
+import { sendChatMessage, voiceConverse, getVoiceStatus, uploadReport, listReports, setToken } from "./api.js";
+import LandingPage from "./LandingPage.jsx";
+import LoginPage from "./LoginPage.jsx";
+import LabReportChart from "./LabReportChart.jsx";
+import CycleRing from "./CycleRing.jsx";
+import RemindersPage from "./RemindersPage.jsx";
+import ActivityTrackerPage from "./ActivityTrackerPage.jsx";
 
 const PAGE_TITLES = {
   dashboard: "Dashboard",
   assistant: "Ask NARI",
   reports: "Reports",
   twin: "Digital Health Twin",
+  reminders: "Medicine Reminders",
+  activity: "Daily Activity",
   clinician: "Clinician Portal",
 };
 
-// The 7-stage LangGraph pipeline every chat/voice turn runs through
-// server-side (backend/app/agents/graph.py). Shown on the dashboard so
-// judges can see the multi-agent orchestration at a glance, not just its
-// end result in the chat bubble.
 const AGENT_PIPELINE = [
   { name: "Emergency Escalation", note: "Always-first safety check" },
   { name: "Router", note: "Picks one specialist agent" },
@@ -30,12 +34,6 @@ const AGENT_PIPELINE = [
   { name: "Follow-up Care", note: "Schedules continuity check-ins" },
 ];
 
-// Digital Health Twin demo context for Ananya (the same persona used across
-// the dashboard/chat). Cycle + symptom history isn't wired to a real
-// ingestion endpoint yet (see README "Known gaps"), so this illustrates the
-// intended experience; the Risk Signals & Care Plan sections below it fill
-// in with real backend output the moment a chat/voice turn produces one
-// (see sessionRiskSignals/sessionCarePlan state).
 const DEMO_CYCLE_LENGTHS = [26, 31, 24, 33, 27, 35];
 const DEMO_SYMPTOM_TIMELINE = [
   { id: 1, date: "Today", text: "Mild cramps, linked to cycle", tag: "Symptom" },
@@ -67,13 +65,6 @@ const DEMO_RISK_SIGNALS = [
 ];
 const LEVEL_LABEL = { L0: "Info", L1: "Monitor", L2: "Clinical consultation", L3: "Urgent", L4: "Safety stop" };
 
-// Clinician Portal demo roster. GGSIPU2617 asks for a "Doctor & Caregiver
-// Portal" + "Clinical Decision Support Dashboard" - the backend's schema
-// already has everything this view needs (PatientProfile, RiskSignal,
-// CarePlan, AgentEventLog in backend/app/database/models.py), but there's
-// no auth/clinician-facing API yet (see README "Known gaps"), so this is a
-// UI preview over representative data, built to the same field shapes the
-// real tables already use.
 const DEMO_PATIENTS = [
   { id: "p1", name: "Ananya Sharma", age: 27, concern: "PCOS pattern", level: "L2", adherence: 86, lastActive: "Just now" },
   { id: "p2", name: "Riya Kapoor", age: 24, concern: "Endometriosis - pelvic pain", level: "L2", adherence: 74, lastActive: "2h ago" },
@@ -126,6 +117,8 @@ const DEMO_PROFILE = { full_name: "Ananya", cycle_day: 18, cycle_phase: "Luteal 
 
 const STATUS_TO_FLAG = { NORMAL: "normal", HIGH: "high", LOW: "low", UNSPECIFIED: "flagged" };
 
+const SESSION_KEY = "nari_session_user";
+
 function deriveReportFlag(metrics) {
   if (!metrics || metrics.length === 0) return "flagged";
   return metrics.some((m) => m.status === "HIGH" || m.status === "LOW") ? "flagged" : "normal";
@@ -139,56 +132,55 @@ function formatDate(iso) {
   }
 }
 
+function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function NARIApp() {
+  const [view, setView] = useState(() => (loadSession() ? "dashboard" : "landing")); // landing | login | dashboard
+  const [user, setUser] = useState(() => loadSession());
   const [activePage, setActivePage] = useState("dashboard");
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [speakEnabled, setSpeakEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false); // browser SpeechRecognition
+  const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceError, setVoiceError] = useState("");
   const recognitionRef = useRef(null);
   const chatEndRef = useRef(null);
 
-  // Server voice pipeline availability (faster-whisper/Piper,
-  // wrapped behind /api/v1/voice). Falls back to the browser's own
-  // SpeechRecognition/speechSynthesis when either isn't configured.
   const [sttAvailable, setSttAvailable] = useState(false);
   const [ttsAvailable, setTtsAvailable] = useState(false);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
-  const lastTranscriptRef = useRef("");
   const useServerStt = sttAvailable;
   const micSupported = sttAvailable || voiceSupported;
 
-  // Reports state
   const fileInputRef = useRef(null);
   const [dragActive, setDragActive] = useState(false);
   const [reportFile, setReportFile] = useState(null);
-  const [scanState, setScanState] = useState("idle"); // idle | scanning | done | error
+  const [scanState, setScanState] = useState("idle");
   const [scanResult, setScanResult] = useState(null);
   const [scanErrorText, setScanErrorText] = useState("");
   const [pastReports, setPastReports] = useState([]);
 
-  // Notifications
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [toast, setToast] = useState(null);
   const unreadCount = notifications.filter((n) => n.unread).length;
 
-  // Digital Health Twin: real risk_signal/care_plan objects captured from
-  // the LangGraph orchestrator's responses as they arrive during this
-  // session (see handleSend/handleVoiceTurn), so the Health Twin page
-  // shows genuine explainable AI output the moment the agent graph
-  // produces one, falling back to labelled example cards until then.
   const [sessionRiskSignals, setSessionRiskSignals] = useState([]);
   const [sessionCarePlan, setSessionCarePlan] = useState(null);
 
-  // Clinician Portal: which demo patient is currently selected for review.
   const [selectedPatientId, setSelectedPatientId] = useState("p1");
 
-  // Load brand fonts
+  // Load global fonts once, regardless of which view is active.
   useEffect(() => {
     const l1 = document.createElement("link");
     l1.rel = "preconnect";
@@ -196,7 +188,7 @@ export default function NARIApp() {
     const l2 = document.createElement("link");
     l2.rel = "stylesheet";
     l2.href =
-      "https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap";
+      "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap";
     document.head.appendChild(l1);
     document.head.appendChild(l2);
     return () => {
@@ -205,8 +197,8 @@ export default function NARIApp() {
     };
   }, []);
 
-  // Poll voice pipeline status once on mount
   useEffect(() => {
+    if (view !== "dashboard") return;
     getVoiceStatus()
       .then((s) => {
         setSttAvailable(!!s.stt_available);
@@ -216,10 +208,10 @@ export default function NARIApp() {
         setSttAvailable(false);
         setTtsAvailable(false);
       });
-  }, []);
+  }, [view]);
 
-  // Initial reports fetch
   useEffect(() => {
+    if (view !== "dashboard") return;
     listReports()
       .then((data) => {
         const items = (data.items || []).map((r) => ({
@@ -232,9 +224,8 @@ export default function NARIApp() {
         setPastReports(items);
       })
       .catch(() => {});
-  }, []);
+  }, [view]);
 
-  // Set up browser SpeechRecognition (fallback if server STT isn't active)
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) {
@@ -246,15 +237,11 @@ export default function NARIApp() {
       rec.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
         setIsListening(false);
-        if (transcript) {
-          handleVoiceTurn({ transcript });
-        }
+        if (transcript) handleVoiceTurn({ transcript });
       };
       rec.onerror = (e) => {
         setIsListening(false);
-        if (e.error !== "no-speech") {
-          setVoiceError(`Voice error: ${e.error}`);
-        }
+        if (e.error !== "no-speech") setVoiceError(`Voice error: ${e.error}`);
       };
       rec.onend = () => setIsListening(false);
       recognitionRef.current = rec;
@@ -288,14 +275,12 @@ export default function NARIApp() {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
         setIsListening(false);
-        if (blob.size > 0) {
-          handleVoiceTurn({ audioBlob: blob });
-        }
+        if (blob.size > 0) handleVoiceTurn({ audioBlob: blob });
       };
       mediaRecorderRef.current = mr;
       mr.start();
       setIsListening(true);
-    } catch (err) {
+    } catch {
       setVoiceError("Microphone access was denied or not available.");
       setIsListening(false);
     }
@@ -341,7 +326,6 @@ export default function NARIApp() {
       .slice(-8)
       .map((m) => ({ role: m.sender, content: m.text }));
 
-  // Text chat -> LangGraph orchestrator
   const handleSend = async (overrideText) => {
     const text = (typeof overrideText === "string" ? overrideText : input).trim();
     if (!text) return;
@@ -352,15 +336,7 @@ export default function NARIApp() {
       const res = await sendChatMessage(text, recentHistoryPayload(), DEMO_PROFILE);
       setMessages((prev) => [
         ...prev,
-        {
-          id: Date.now() + 1,
-          sender: "assistant",
-          agent: res.agent,
-          text: res.reply,
-          urgent: res.urgent,
-          evidence: res.evidence,
-          riskSignal: res.risk_signal,
-        },
+        { id: Date.now() + 1, sender: "assistant", agent: res.agent, text: res.reply, urgent: res.urgent, evidence: res.evidence, riskSignal: res.risk_signal },
       ]);
       if (speakEnabled) speak(res.reply);
       if (res.urgent) addNotification("Urgent symptom flagged in your assistant chat", "just now");
@@ -369,19 +345,13 @@ export default function NARIApp() {
     } catch (err) {
       setMessages((prev) => [
         ...prev,
-        {
-          id: Date.now() + 2,
-          sender: "assistant",
-          agent: "NARI",
-          text: `Sorry, I couldn't reach the assistant backend (${err.message}). Is the FastAPI server running?`,
-        },
+        { id: Date.now() + 2, sender: "assistant", agent: "NARI", text: `Sorry, I couldn't reach the assistant backend (${err.message}). Is the FastAPI server running?` },
       ]);
     } finally {
       setIsTyping(false);
     }
   };
 
-  // Voice-to-voice turn
   const handleVoiceTurn = async ({ audioBlob, transcript }) => {
     const placeholderId = Date.now();
     setMessages((prev) => [
@@ -391,32 +361,18 @@ export default function NARIApp() {
         : { id: placeholderId, sender: "user", text: "🎙️ Transcribing…", pending: true },
     ]);
     setIsTyping(true);
-
     try {
       const res = await voiceConverse({ audioBlob, transcript, history: recentHistoryPayload() });
-
       setMessages((prev) => {
-        const withTranscript = prev.map((m) =>
-          m.id === placeholderId ? { ...m, text: res.transcript, pending: false } : m
-        );
+        const withTranscript = prev.map((m) => (m.id === placeholderId ? { ...m, text: res.transcript, pending: false } : m));
         return [
           ...withTranscript,
-          {
-            id: Date.now() + 1,
-            sender: "assistant",
-            agent: res.agent,
-            text: res.reply,
-            urgent: res.urgent,
-            evidence: res.evidence,
-            riskSignal: res.risk_signal,
-          },
+          { id: Date.now() + 1, sender: "assistant", agent: res.agent, text: res.reply, urgent: res.urgent, evidence: res.evidence, riskSignal: res.risk_signal },
         ];
       });
-
       if (res.urgent) addNotification("Urgent symptom flagged in your assistant chat", "just now");
       if (res.risk_signal) setSessionRiskSignals((prev) => [res.risk_signal, ...prev].slice(0, 6));
       if (res.care_plan) setSessionCarePlan(res.care_plan);
-
       if (res.audio_base64) {
         const audio = new Audio(`data:audio/${res.audio_format || "wav"};base64,${res.audio_base64}`);
         audio.play().catch(() => {});
@@ -428,19 +384,13 @@ export default function NARIApp() {
         prev
           .filter((m) => m.id !== placeholderId || transcript)
           .map((m) => (m.id === placeholderId ? { ...m, text: transcript || m.text, pending: false } : m))
-          .concat({
-            id: Date.now() + 2,
-            sender: "assistant",
-            agent: "NARI",
-            text: `Sorry, the voice pipeline hit an error: ${err.message}`,
-          })
+          .concat({ id: Date.now() + 2, sender: "assistant", agent: "NARI", text: `Sorry, the voice pipeline hit an error: ${err.message}` })
       );
     } finally {
       setIsTyping(false);
     }
   };
 
-  // Report upload
   const handleFile = async (file) => {
     setReportFile(file);
     setScanState("scanning");
@@ -449,19 +399,10 @@ export default function NARIApp() {
     try {
       const res = await uploadReport(file);
       const reportJson = res.report.report_json;
-      setScanResult({
-        patientDemographicsFound: reportJson.patient_demographics_found,
-        metrics: reportJson.metrics,
-      });
+      setScanResult({ patientDemographicsFound: reportJson.patient_demographics_found, metrics: reportJson.metrics });
       setScanState("done");
       setPastReports((prev) => [
-        {
-          id: res.report.id,
-          name: res.report.original_filename,
-          date: "Just now",
-          status: deriveReportFlag(reportJson.metrics),
-          statusLabel: deriveReportFlag(reportJson.metrics),
-        },
+        { id: res.report.id, name: res.report.original_filename, date: "Just now", status: deriveReportFlag(reportJson.metrics), statusLabel: deriveReportFlag(reportJson.metrics) },
         ...prev,
       ]);
       addNotification(`Report analyzed — ${reportJson.metrics.length} value(s) extracted`, "just now");
@@ -493,74 +434,156 @@ export default function NARIApp() {
     }
   };
 
+  // --- Auth / view transitions ---
+  const enterDashboard = (u) => {
+    setUser(u);
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
+    } catch {
+      /* ignore */
+    }
+    setView("dashboard");
+    setActivePage("dashboard");
+  };
+
+    const handleSignOut = () => {
+    setUser(null);
+    setToken(null);
+    try {
+      localStorage.removeItem(SESSION_KEY);
+    } catch {
+      /* ignore */
+    }
+    setView("landing");
+  };
+
+  if (view === "landing") {
+    return (
+      <LandingPage
+        onGetStarted={() => setView("login")}
+        onSignIn={() => setView("login")}
+        onGuest={() => enterDashboard({ guest: true })}
+      />
+    );
+  }
+
+  if (view === "login") {
+    return (
+      <LoginPage
+        onSignIn={(u) => enterDashboard(u)}
+        onGuest={() => enterDashboard({ guest: true })}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
+
+  const displayName = user?.guest ? "Guest" : user?.email ? user.email.split("@")[0] : "there";
+
   return (
     <div className="app-shell">
+      <span className="bloom-blob b1" />
+      <span className="bloom-blob b2" />
+      <span className="bloom-blob b3" />
+
       <style>{`
         :root{
-          --deep-violet:#34205F; --primary-purple:#694CD0; --lavender:#E1C3FF;
-          --warm-cream:#FFF9EF; --health-teal:#3F8F87; --soft-rose:#E7A1A8; --yellow:#F4CE45;
-          --ink:#2B1B4D; --ink-soft:#5B4A82; --line:rgba(52,32,95,0.12); --panel:#ffffff;
+          --deep-violet:#3B2159; --primary-purple:#7C5CD6; --lavender:#E7CFFF;
+          --blush:#FFD9E4; --rose:#F5A6C2; --gold:#F6C453; --mint:#8FD6C4;
+          --warm-cream:#FFF7F0; --health-teal:#3F8F87; --soft-rose:#E7A1A8; --yellow:#F4CE45;
+          --ink:#2E1B45; --ink-soft:#6B5A8E; --line:rgba(59,33,89,0.10); --panel:#ffffff;
+          --gradient-hero: linear-gradient(135deg,#3B2159 0%,#7C5CD6 55%,#B98CE8 100%);
+          --gradient-blush: linear-gradient(135deg,#FFD9E4 0%,#E7CFFF 100%);
           --font-head:'Plus Jakarta Sans',sans-serif; --font-body:'Source Sans 3',sans-serif;
+          --shadow-soft: 0 14px 34px rgba(59,33,89,0.10); --shadow-lift: 0 20px 46px rgba(124,92,214,0.22);
         }
         .app-shell *{box-sizing:border-box;}
         .app-shell{
-          display:flex; min-height:100vh; background:var(--warm-cream); color:var(--ink);
-          font-family:var(--font-body); font-size:15px;
+          position:relative; display:flex; min-height:100vh; background:var(--warm-cream); color:var(--ink);
+          font-family:var(--font-body); font-size:15px; overflow-x:hidden;
         }
         .app-shell h1,.app-shell h2,.app-shell h3{font-family:var(--font-head);color:var(--deep-violet);margin:0;}
         .app-shell a{text-decoration:none;color:inherit;}
         .app-shell button{font-family:inherit;cursor:pointer;}
         .app-shell ul{list-style:none;margin:0;padding:0;}
 
-        /* Sidebar */
-        .sidebar{
-          width:220px; flex-shrink:0; background:var(--deep-violet); color:var(--warm-cream);
-          display:flex; flex-direction:column; padding:22px 16px; position:sticky; top:0; height:100vh;
-        }
-        .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-weight:800;font-size:18px;padding:0 8px 26px;}
-        .brand-mark{width:24px;height:24px;border-radius:50%;border:2px solid var(--lavender);position:relative;flex-shrink:0;}
-        .brand-mark::after{content:'';position:absolute;top:50%;left:50%;width:7px;height:7px;border-radius:50%;background:var(--soft-rose);transform:translate(-50%,-50%);}
-        .sidebar-nav{display:flex;flex-direction:column;gap:4px;flex:1;}
-        .nav-item{
-          display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:12px;
-          font-family:var(--font-head);font-weight:600;font-size:14px;color:rgba(255,249,239,0.7);
-          transition:background .2s ease,color .2s ease;
-        }
-        .nav-item:hover{background:rgba(255,249,239,0.08);color:#fff;}
-        .nav-item.active{background:var(--primary-purple);color:#fff;}
-        .sidebar-foot{border-top:1px solid rgba(255,249,239,0.14);padding-top:16px;margin-top:12px;}
-        .user-chip{display:flex;align-items:center;gap:10px;}
-        .user-avatar{width:30px;height:30px;border-radius:50%;background:var(--primary-purple);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .user-name{font-family:var(--font-head);font-weight:700;font-size:13px;}
-        .user-sub{font-size:11.5px;color:rgba(255,249,239,0.6);}
+        .bloom-blob{ position:fixed; border-radius:50%; filter:blur(60px); opacity:0.35; z-index:0; pointer-events:none; }
+        .bloom-blob.b1{ width:340px; height:340px; background:var(--blush); top:-80px; right:-60px; }
+        .bloom-blob.b2{ width:280px; height:280px; background:var(--lavender); bottom:-60px; left:220px; }
+        .bloom-blob.b3{ width:200px; height:200px; background:var(--mint); top:40%; right:10%; opacity:0.2; }
+        .main-col, .sidebar{ position:relative; z-index:1; }
 
-        /* Main column */
-        .main-col{flex:1;display:flex;flex-direction:column;min-width:0;}
+        /* Sidebar (fixed so it never scrolls with page content) */
+        .sidebar{
+          width:236px; flex-shrink:0; background:var(--gradient-hero); color:var(--warm-cream);
+          display:flex; flex-direction:column; padding:26px 18px;
+          position:fixed; top:0; left:0; height:100vh; z-index:5;
+          border-radius:0 28px 28px 0; box-shadow:var(--shadow-lift);
+          overflow-y:auto;
+        }
+        .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:800;font-size:20px;padding:0 6px 30px;letter-spacing:0.01em;}
+        .brand-mark{
+          width:30px;height:30px;border-radius:50%; background:radial-gradient(circle at 35% 30%,#fff,var(--rose) 60%,var(--primary-purple));
+          position:relative;flex-shrink:0; box-shadow:0 0 0 4px rgba(255,255,255,0.12);
+        }
+        .sidebar-nav{display:flex;flex-direction:column;gap:6px;flex:1;}
+        .nav-item{
+          display:flex;align-items:center;gap:13px;padding:12px 14px;border-radius:16px;
+          font-family:var(--font-head);font-weight:600;font-size:14px;color:rgba(255,247,240,0.75);
+          transition:background .25s ease,color .25s ease,transform .2s ease;
+        }
+        .nav-item:hover{background:rgba(255,255,255,0.10);color:#fff;transform:translateX(3px);}
+        .nav-item.active{background:rgba(255,255,255,0.18);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.25);}
+        .sidebar-foot{border-top:1px solid rgba(255,255,255,0.16);padding-top:18px;margin-top:14px;}
+        .user-chip{display:flex;align-items:center;gap:11px;}
+        .user-avatar{
+          width:34px;height:34px;border-radius:50%; background:linear-gradient(135deg,var(--rose),var(--gold));
+          display:flex;align-items:center;justify-content:center;flex-shrink:0; box-shadow:0 0 0 3px rgba(255,255,255,0.15);
+        }
+        .user-name{font-family:var(--font-head);font-weight:700;font-size:13.5px;}
+        .user-sub{font-size:11px;color:rgba(255,247,240,0.65);}
+        .signout-btn{
+          display:flex;align-items:center;gap:7px;margin-top:14px;padding:9px 12px;width:100%;
+          background:rgba(255,255,255,0.10);border:none;border-radius:12px;color:rgba(255,247,240,0.85);
+          font-size:12px;font-weight:600;transition:background .2s ease;
+        }
+        .signout-btn:hover{background:rgba(255,255,255,0.2);}
+
+        .main-col{flex:1;display:flex;flex-direction:column;min-width:0;margin-left:236px;}
+
         .topbar{
-          display:flex;align-items:center;justify-content:space-between;padding:18px 32px;
-          border-bottom:1px solid var(--line);background:rgba(255,249,239,0.9);position:sticky;top:0;z-index:10;
+          display:flex;align-items:center;justify-content:space-between;padding:20px 34px;
+          background:transparent; position:sticky;top:0;z-index:10;
         }
-        .topbar-title{font-family:var(--font-head);font-weight:700;font-size:18px;color:var(--deep-violet);}
-        .topbar-actions{position:relative;}
+        .topbar-title{font-family:var(--font-head);font-weight:700;font-size:21px;color:var(--deep-violet);}
+        .topbar-actions{position:relative;display:flex;align-items:center;gap:12px;}
+        .guest-banner{
+          display:flex;align-items:center;gap:10px;background:var(--gradient-blush);border-radius:100px;
+          padding:8px 14px 8px 16px;font-size:12.5px;font-weight:600;color:var(--deep-violet);box-shadow:var(--shadow-soft);
+        }
+        .guest-banner button{
+          background:var(--primary-purple);color:#fff;border:none;border-radius:100px;padding:6px 13px;font-size:11.5px;font-weight:700;
+        }
         .icon-btn{
-          position:relative;width:38px;height:38px;border-radius:50%;border:1px solid var(--line);
-          background:#fff;display:flex;align-items:center;justify-content:center;color:var(--deep-violet);
+          position:relative;width:40px;height:40px;border-radius:50%;border:none; background:#fff;
+          display:flex;align-items:center;justify-content:center;color:var(--primary-purple);
+          box-shadow:var(--shadow-soft); transition:transform .18s ease;
         }
+        .icon-btn:hover{transform:scale(1.08);}
         .badge{
-          position:absolute;top:-4px;right:-4px;background:var(--soft-rose);color:#4a1f27;
+          position:absolute;top:-4px;right:-4px;background:var(--rose);color:#4a1f27;
           font-size:10px;font-weight:700;border-radius:100px;padding:1px 5px;font-family:var(--font-head);
         }
         .notif-backdrop{position:fixed;inset:0;z-index:20;}
         .notif-panel{
-          position:absolute;top:48px;right:0;width:320px;background:#fff;border:1px solid var(--line);
-          border-radius:16px;box-shadow:0 20px 46px rgba(52,32,95,0.18);z-index:21;overflow:hidden;
+          position:absolute;top:52px;right:0;width:320px;background:#fff;border:none;
+          border-radius:20px;box-shadow:var(--shadow-lift);z-index:21;overflow:hidden;
         }
         .notif-panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line);font-family:var(--font-head);font-weight:700;font-size:13.5px;}
         .notif-panel-head button{background:none;border:none;color:var(--ink-soft);}
         .notif-panel ul{max-height:320px;overflow-y:auto;}
         .notif-panel li{display:flex;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);cursor:pointer;}
         .notif-panel li:last-child{border-bottom:none;}
-        .notif-panel li:hover{background:#FCF9F2;}
+        .notif-panel li:hover{background:var(--warm-cream);}
         .notif-panel li .dot{width:7px;height:7px;border-radius:50%;background:var(--line);margin-top:6px;flex-shrink:0;}
         .notif-panel li.unread .dot{background:var(--primary-purple);}
         .notif-panel li strong{display:block;font-size:13px;font-weight:600;color:var(--deep-violet);line-height:1.4;}
@@ -568,93 +591,109 @@ export default function NARIApp() {
 
         .page{flex:1;padding:28px 32px 48px;max-width:980px;width:100%;}
 
-        /* Toast */
         .toast{
           position:fixed;bottom:24px;right:24px;background:var(--deep-violet);color:#fff;
-          padding:13px 18px;border-radius:12px;display:flex;align-items:center;gap:9px;
-          font-size:13.5px;box-shadow:0 16px 34px rgba(52,32,95,0.3);z-index:30;
+          padding:13px 18px;border-radius:14px;display:flex;align-items:center;gap:9px;
+          font-size:13.5px;box-shadow:var(--shadow-lift);z-index:30;
         }
 
-        /* Dashboard */
         .welcome-card{
-          background:linear-gradient(120deg,var(--deep-violet),#4a2f82);color:#fff;border-radius:20px;
-          padding:30px 32px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:20px;margin-bottom:26px;
+          background:var(--gradient-hero);color:#fff;border-radius:28px;
+          padding:36px 38px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:22px;margin-bottom:28px;
+          position:relative; overflow:hidden;
         }
-        .eyebrow-sm{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--lavender);margin:0 0 6px;}
-        .welcome-card h1{color:#fff;font-size:24px;}
-        .muted{color:rgba(255,249,239,0.75);font-size:13.5px;margin-top:6px;}
-        .quick-actions{display:flex;gap:10px;flex-wrap:wrap;}
+        .welcome-card::after{ content:'✦'; position:absolute; right:36px; top:18px; font-size:52px; color:rgba(255,255,255,0.15); }
+        .eyebrow-sm{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--blush);margin:0 0 8px;}
+        .welcome-card h1{color:#fff;font-size:28px;}
+        .muted{color:rgba(255,247,240,0.82);font-size:14px;margin-top:7px;}
+        .quick-actions{display:flex;gap:11px;flex-wrap:wrap;}
         .qa-btn{
-          display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:100px;
-          font-family:var(--font-head);font-weight:600;font-size:13.5px;background:#fff;color:var(--deep-violet);border:none;
+  display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:100px;
+  font-family:var(--font-head);font-weight:600;font-size:13.5px;
+  background:rgba(255,255,255,0.16);color:#fff;border:1.5px solid rgba(255,255,255,0.55);
+  transition:transform .18s ease, box-shadow .18s ease, background .18s ease;
+}
+.qa-btn:hover{ transform:translateY(-2px); background:rgba(255,255,255,0.28); box-shadow:0 10px 22px rgba(0,0,0,0.18); }
+.qa-btn.primary{background:linear-gradient(135deg,var(--gold),#F6A15A);color:#4a3600;border:none;}
+        .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px;}
+        .stat-card{
+          background:#fff;border:none;border-radius:20px;padding:22px; box-shadow:var(--shadow-soft);
+          transition:transform .2s ease, box-shadow .2s ease;
         }
-        .qa-btn.primary{background:var(--yellow);color:#4a3600;}
-        .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:26px;}
-        .stat-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;}
-        .stat-icon.rose{color:var(--soft-rose);} .stat-icon.teal{color:var(--health-teal);}
-        .stat-icon.purple{color:var(--primary-purple);} .stat-icon.violet{color:var(--deep-violet);}
-        .stat-label{font-size:12px;color:var(--ink-soft);margin-top:12px;}
-        .stat-value{font-family:var(--font-head);font-weight:700;font-size:19px;color:var(--deep-violet);margin-top:3px;}
+        .stat-card:hover{ transform:translateY(-4px); box-shadow:var(--shadow-lift); }
+        .stat-icon{ width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center; }
+        .stat-icon.rose{ background:#FFE3EA;color:#C6607F; }
+        .stat-icon.teal{ background:#E1F3EE;color:var(--health-teal); }
+        .stat-icon.purple{ background:#F0E9FF;color:var(--primary-purple); }
+        .stat-icon.violet{ background:#EAE1FB;color:var(--deep-violet); }
+        .stat-label{font-size:12px;color:var(--ink-soft);margin-top:14px;}
+        .stat-value{font-family:var(--font-head);font-weight:700;font-size:20px;color:var(--deep-violet);margin-top:3px;}
         .stat-sub{font-size:11.5px;color:var(--ink-soft);margin-top:3px;}
-        .activity-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px;}
-        .activity-card h3{font-size:15px;margin-bottom:16px;}
-        .activity-list li{display:flex;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line);align-items:flex-start;}
+        .activity-card{background:#fff;border:none;border-radius:20px;padding:26px;box-shadow:var(--shadow-soft);}
+        .activity-card h3{font-size:16px;margin-bottom:18px;}
+        .activity-list li{display:flex;gap:13px;padding:12px 0;border-bottom:1px dashed var(--line);align-items:flex-start;}
         .activity-list li:last-child{border-bottom:none;}
         .activity-list .dot{width:9px;height:9px;border-radius:50%;margin-top:5px;flex-shrink:0;}
-        .dot.rose{background:var(--soft-rose);} .dot.teal{background:var(--health-teal);}
+        .dot.rose{background:var(--rose);} .dot.teal{background:var(--health-teal);}
         .dot.purple{background:var(--primary-purple);} .dot.violet{background:var(--deep-violet);}
         .activity-list strong{display:block;font-size:13.5px;color:var(--deep-violet);font-weight:600;}
         .activity-list span{font-size:11.5px;color:var(--ink-soft);}
 
-        /* Chat */
-        .chat-shell{display:flex;flex-direction:column;height:calc(100vh - 160px);max-height:720px;background:#fff;border:1px solid var(--line);border-radius:20px;overflow:hidden;}
-        .chat-toolbar{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid var(--line);}
+        .chat-shell{
+          display:flex;flex-direction:column;height:calc(100vh - 160px);max-height:740px;
+          background:#fff;border:none;border-radius:26px;overflow:hidden;box-shadow:var(--shadow-soft);
+        }
+        .chat-toolbar{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line);background:var(--gradient-blush);}
         .chat-toolbar-left{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft);}
-        .speak-toggle{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:#fff;border-radius:100px;padding:7px 12px;font-size:12px;font-weight:600;color:var(--ink-soft);}
-        .speak-toggle.on{background:var(--lavender);color:var(--deep-violet);border-color:transparent;}
-        .chat-window{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:14px;}
+        .speak-toggle{display:flex;align-items:center;gap:7px;border:none;background:#fff;border-radius:100px;padding:8px 14px;font-size:12px;font-weight:600;color:var(--ink-soft);box-shadow:var(--shadow-soft);}
+        .speak-toggle.on{background:var(--primary-purple);color:#fff;}
+        .chat-window{flex:1;overflow-y:auto;padding:24px 22px;display:flex;flex-direction:column;gap:16px;}
         .msg-row{display:flex;flex-direction:column;max-width:72%;}
         .msg-row.user{align-self:flex-end;align-items:flex-end;}
         .msg-row.assistant{align-self:flex-start;align-items:flex-start;}
-        .agent-tag{font-family:var(--font-head);font-weight:700;font-size:10.5px;letter-spacing:0.05em;text-transform:uppercase;color:var(--primary-purple);margin-bottom:5px;padding-left:2px;}
-        .bubble{padding:12px 15px;border-radius:16px;font-size:14px;line-height:1.55;}
-        .bubble.user{background:var(--primary-purple);color:#fff;border-bottom-right-radius:4px;}
-        .bubble.assistant{background:#F3EEFF;color:var(--ink);border-bottom-left-radius:4px;}
-        .bubble.assistant.urgent{background:#FBE4E6;color:#6b1f27;border:1px solid var(--soft-rose);}
+        .agent-tag{font-family:var(--font-head);font-weight:700;font-size:10.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--primary-purple);margin-bottom:6px;padding-left:3px;}
+        .bubble{padding:13px 17px;border-radius:20px;font-size:14px;line-height:1.6; animation: bubble-in .3s ease;}
+        @keyframes bubble-in{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
+        .bubble.user{background:linear-gradient(135deg,var(--primary-purple),#5D3FB5);color:#fff;border-bottom-right-radius:6px;}
+        .bubble.assistant{background:var(--gradient-blush);color:var(--ink);border-bottom-left-radius:6px;}
+        .bubble.assistant.urgent{background:#FBE0E5;color:#6b1f27;border:1px solid var(--rose);}
         .bubble.typing{display:flex;gap:4px;padding:14px 16px;}
         .bubble.typing span{width:6px;height:6px;border-radius:50%;background:var(--ink-soft);opacity:0.5;animation:blink 1.2s infinite ease-in-out;}
         .bubble.typing span:nth-child(2){animation-delay:0.2s;} .bubble.typing span:nth-child(3){animation-delay:0.4s;}
         @keyframes blink{0%,80%,100%{opacity:0.25;} 40%{opacity:0.9;}}
-        .risk-flag{display:flex;align-items:flex-start;gap:6px;margin-top:9px;padding:8px 10px;border-radius:10px;font-size:12.5px;line-height:1.4;background:#FFF4E0;color:#7A4B00;border:1px solid #F4CE45;}
+        .risk-flag{display:flex;align-items:flex-start;gap:6px;margin-top:9px;padding:8px 10px;border-radius:12px;font-size:12.5px;line-height:1.4;background:#FFF4E0;color:#7A4B00;border:1px solid var(--gold);}
         .risk-flag svg{flex-shrink:0;margin-top:1px;}
-        .risk-flag.risk-l2,.risk-flag.risk-l3{background:#FBE4E6;color:#6b1f27;border-color:var(--soft-rose);}
+        .risk-flag.risk-l2,.risk-flag.risk-l3{background:#FBE0E5;color:#6b1f27;border-color:var(--rose);}
         .evidence-list{margin-top:8px;display:flex;flex-direction:column;gap:3px;}
         .evidence-item{font-size:11.5px;color:var(--ink-soft);}
         .evidence-item a{color:var(--primary-purple);text-decoration:underline;}
         .chip-row{display:flex;flex-wrap:wrap;gap:8px;padding:0 20px 14px;}
-        .chip{border:1px solid var(--line);background:#fff;border-radius:100px;padding:8px 13px;font-size:12.5px;color:var(--deep-violet);font-weight:600;}
-        .chip:hover{background:var(--lavender);border-color:transparent;}
+        .chip{border:none;background:#fff;border-radius:100px;padding:9px 15px;font-size:12.5px;color:var(--deep-violet);font-weight:600;box-shadow:var(--shadow-soft);transition:transform .18s ease, background .18s ease;}
+        .chip:hover{background:var(--lavender);transform:translateY(-2px);}
         .voice-error{display:flex;align-items:center;gap:7px;padding:0 20px 10px;color:#8a4a30;font-size:12px;}
         .chat-input-row{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--line);}
-        .mic-btn{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:#fff;display:flex;align-items:center;justify-content:center;color:var(--deep-violet);flex-shrink:0;}
-        .mic-btn.listening{background:var(--soft-rose);color:#fff;border-color:transparent;animation:mic-pulse 1.4s infinite;}
+        .mic-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--warm-cream);display:flex;align-items:center;justify-content:center;color:var(--deep-violet);flex-shrink:0;transition:transform .18s ease;}
+        .mic-btn.listening{background:var(--rose);color:#fff;border-color:transparent;animation:mic-pulse 1.4s infinite;}
         .mic-btn.disabled{opacity:0.4;cursor:not-allowed;}
-        @keyframes mic-pulse{0%{box-shadow:0 0 0 0 rgba(231,161,168,0.5);}100%{box-shadow:0 0 0 10px rgba(231,161,168,0);}}
-        .chat-input{flex:1;border:1px solid var(--line);border-radius:100px;padding:11px 16px;font-size:14px;font-family:var(--font-body);outline:none;}
-        .chat-input:focus{border-color:var(--primary-purple);}
-        .send-btn{width:38px;height:38px;border-radius:50%;background:var(--primary-purple);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+        .mic-btn:hover{transform:scale(1.08);}
+        @keyframes mic-pulse{0%{box-shadow:0 0 0 0 rgba(245,166,194,0.5);}100%{box-shadow:0 0 0 10px rgba(245,166,194,0);}}
+        .chat-input{flex:1;border:1.5px solid var(--line);border-radius:100px;padding:12px 18px;font-size:14px;font-family:var(--font-body);outline:none;transition:border-color .2s ease, box-shadow .2s ease;}
+        .chat-input:focus{border-color:var(--primary-purple); box-shadow:0 0 0 3px rgba(124,92,214,0.14);}
+        .send-btn{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--primary-purple),#5D3FB5);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .18s ease;box-shadow:var(--shadow-soft);}
+        .send-btn:hover{transform:scale(1.1) rotate(8deg);}
 
-        /* Reports */
         .reports-shell{display:flex;flex-direction:column;gap:22px;}
         .dropzone{
-          border:2px dashed var(--line);border-radius:18px;background:#fff;padding:40px 20px;
-          display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;color:var(--ink-soft);cursor:pointer;
+          border:2.5px dashed var(--lavender);border-radius:24px;background:#fff;padding:46px 20px;
+          display:flex;flex-direction:column;align-items:center;text-align:center;gap:9px;color:var(--ink-soft);cursor:pointer;
+          transition: border-color .2s ease, background .2s ease, transform .2s ease;
         }
-        .dropzone.active{border-color:var(--primary-purple);background:#F8F5FF;}
+        .dropzone:hover{ transform:translateY(-2px); }
+        .dropzone.active{border-color:var(--primary-purple);background:var(--gradient-blush);}
         .dropzone svg{color:var(--primary-purple);}
         .dropzone strong{color:var(--deep-violet);}
         .muted-sm{font-size:12px;color:var(--ink-soft);}
-        .scan-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;}
+        .scan-card{background:#fff;border:none;border-radius:20px;padding:24px;box-shadow:var(--shadow-soft);}
         .scan-card-head{display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:14px;color:var(--deep-violet);margin-bottom:10px;}
         .spin{animation:spin 1s linear infinite;color:var(--primary-purple);}
         @keyframes spin{to{transform:rotate(360deg);}}
@@ -664,10 +703,10 @@ export default function NARIApp() {
         .marker-table th{text-align:left;font-family:var(--font-head);font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);padding:8px 6px;border-bottom:1px solid var(--line);}
         .marker-table td{padding:10px 6px;border-bottom:1px solid var(--line);color:var(--ink);}
         .flag-pill{font-family:var(--font-head);font-weight:700;font-size:11px;padding:4px 10px;border-radius:100px;text-transform:capitalize;}
-        .flag-pill.low, .flag-pill.flagged{background:#FBEADB;color:#8a4a30;}
-        .flag-pill.high{background:#FBE4E6;color:#6b1f27;}
-        .flag-pill.normal{background:#E6F2F0;color:#215a52;}
-        .past-reports{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px;}
+        .flag-pill.low, .flag-pill.flagged{background:#FDEBD3;color:#8a4a30;}
+        .flag-pill.high{background:#FBE0E5;color:#6b1f27;}
+        .flag-pill.normal{background:#DFF3ED;color:#215a52;}
+        .past-reports{background:#fff;border:none;border-radius:20px;padding:24px;box-shadow:var(--shadow-soft);}
         .past-reports h3{font-size:15px;margin-bottom:14px;}
         .past-reports li{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line);}
         .past-reports li:last-child{border-bottom:none;}
@@ -676,78 +715,78 @@ export default function NARIApp() {
         .past-reports li strong{display:block;font-size:13.5px;color:var(--deep-violet);font-weight:600;}
         .past-reports li span{font-size:11.5px;color:var(--ink-soft);}
 
-        /* Agent pipeline strip (Dashboard) */
-        .pipeline-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px 24px;margin-bottom:26px;}
+        .pipeline-card{background:#fff;border:none;border-radius:20px;padding:26px 28px;margin-bottom:28px;box-shadow:var(--shadow-soft);}
         .pipeline-head{display:flex;align-items:center;gap:8px;color:var(--primary-purple);}
         .pipeline-head h3{font-size:14.5px;margin:0;color:var(--deep-violet);}
-        .pipeline-card code{background:#F3EEFF;color:var(--primary-purple);padding:1px 5px;border-radius:5px;font-size:11.5px;}
+        .pipeline-card code{background:var(--gradient-blush);color:var(--deep-violet);padding:2px 7px;border-radius:6px;font-size:11.5px;}
         .pipeline-row{display:flex;align-items:stretch;gap:2px;overflow-x:auto;margin-top:16px;padding-bottom:4px;}
         .pipeline-step{display:flex;align-items:center;flex-shrink:0;}
-        .pipeline-step-inner{display:flex;align-items:center;gap:9px;background:#FCFAF5;border:1px solid var(--line);border-radius:12px;padding:9px 13px;min-width:150px;}
-        .pipeline-index{width:20px;height:20px;border-radius:50%;background:var(--primary-purple);color:#fff;font-family:var(--font-head);font-weight:700;font-size:10.5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+        .pipeline-step-inner{
+          display:flex;align-items:center;gap:10px;background:var(--warm-cream);border:1px solid var(--line);border-radius:16px;padding:10px 14px;min-width:154px;
+          transition:transform .18s ease;
+        }
+        .pipeline-step-inner:hover{ transform:translateY(-3px); }
+        .pipeline-index{
+          width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--primary-purple));
+          color:#fff;font-family:var(--font-head);font-weight:700;font-size:10.5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        }
         .pipeline-step-inner strong{display:block;font-size:12px;color:var(--deep-violet);font-weight:700;line-height:1.3;}
         .pipeline-step-inner span{font-size:10.5px;color:var(--ink-soft);}
         .pipeline-arrow{color:var(--line);flex-shrink:0;margin:0 3px;}
 
-        /* Health Twin page */
         .twin-shell{display:flex;flex-direction:column;gap:20px;}
-        .twin-profile-card{display:flex;align-items:center;gap:16px;background:linear-gradient(120deg,var(--deep-violet),#4a2f82);border-radius:18px;padding:22px 26px;color:#fff;}
-        .twin-avatar{width:46px;height:46px;border-radius:50%;background:var(--primary-purple);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+        .twin-profile-card{display:flex;align-items:center;gap:18px;background:var(--gradient-hero);border-radius:24px;padding:24px 28px;color:#fff;}
+        .twin-avatar{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
         .twin-profile-info h2{color:#fff;font-size:18px;}
-        .twin-profile-info .muted-sm{color:rgba(255,249,239,0.8);margin-top:4px;}
-        .twin-badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(255,249,239,0.16);border-radius:100px;padding:7px 13px;font-size:12px;font-weight:600;flex-shrink:0;}
+        .twin-profile-info .muted-sm{color:rgba(255,247,240,0.8);margin-top:4px;}
+        .twin-badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.16);border-radius:100px;padding:7px 13px;font-size:12px;font-weight:600;flex-shrink:0;}
         .twin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-        .twin-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px 22px;}
+        .twin-card{background:#fff;border:none;border-radius:20px;padding:22px 24px;box-shadow:var(--shadow-soft);}
         .twin-card-wide{grid-column:1 / -1;}
         .twin-card-head{display:flex;align-items:center;gap:8px;color:var(--primary-purple);margin-bottom:10px;}
         .twin-card-head h3{font-size:14px;margin:0;color:var(--deep-violet);}
         .twin-card a{color:var(--primary-purple);text-decoration:underline;}
-        .cycle-bars{display:flex;align-items:flex-end;gap:10px;height:110px;margin:14px 0 8px;}
-        .cycle-bar-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:6px;}
-        .cycle-bar{width:100%;max-width:26px;background:linear-gradient(180deg,var(--lavender),var(--primary-purple));border-radius:6px 6px 2px 2px;}
-        .cycle-bar-col span{font-size:10.5px;color:var(--ink-soft);}
         .twin-timeline{display:flex;flex-direction:column;gap:12px;}
         .twin-timeline li{display:flex;align-items:flex-start;gap:10px;}
         .twin-timeline li strong{display:block;font-size:13px;color:var(--deep-violet);font-weight:600;}
         .twin-timeline li span{font-size:11px;color:var(--ink-soft);}
         .twin-tag{flex-shrink:0;font-family:var(--font-head);font-weight:700;font-size:10px;padding:3px 8px;border-radius:100px;margin-top:1px;}
-        .twin-tag-symptom{background:#FBE4E6;color:#6b1f27;}
-        .twin-tag-lab{background:#E6F2F0;color:#215a52;}
-        .twin-tag-lifestyle{background:#F3EEFF;color:var(--primary-purple);}
+        .twin-tag-symptom{background:#FBE0E5;color:#6b1f27;}
+        .twin-tag-lab{background:#DFF3ED;color:#215a52;}
+        .twin-tag-lifestyle{background:#F0E9FF;color:var(--primary-purple);}
 
-        /* Risk signal / level styling (shared: twin + clinician) */
-        .risk-card{border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;}
+        .risk-card{border:none;background:var(--warm-cream);border-radius:18px;padding:18px 20px;margin-bottom:12px;}
         .risk-card:last-child{margin-bottom:0;}
         .risk-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
         .risk-card-head strong{font-family:var(--font-head);color:var(--deep-violet);font-size:13.5px;}
         .example-tag{margin-left:auto;font-size:10px;font-weight:700;color:var(--ink-soft);border:1px solid var(--line);border-radius:100px;padding:2px 8px;}
-        .level-pill{font-family:var(--font-head);font-weight:700;font-size:10.5px;padding:4px 10px;border-radius:100px;flex-shrink:0;}
-        .level-l0{background:#E6F2F0;color:#215a52;} .level-l1{background:#FFF4E0;color:#7A4B00;}
-        .level-l2{background:#FBE4E6;color:#6b1f27;} .level-l3{background:#6b1f27;color:#fff;}
-        .risk-card-l0{border-left:4px solid #3F8F87;} .risk-card-l1{border-left:4px solid #F4CE45;}
-        .risk-card-l2{border-left:4px solid var(--soft-rose);} .risk-card-l3{border-left:4px solid #6b1f27;}
+        .level-pill{font-family:var(--font-head);font-weight:700;font-size:10.5px;padding:4px 10px;border-radius:100px;flex-shrink:0;transition:transform .15s ease;}
+        .level-l0{background:#DFF3ED;color:#215a52;} .level-l1{background:#FFF4E0;color:#7A4B00;}
+        .level-l2{background:#FBE0E5;color:#6b1f27;} .level-l3{background:#6b1f27;color:#fff;}
+        .risk-card-l0{border-left:5px solid var(--mint);} .risk-card-l1{border-left:5px solid var(--gold);}
+        .risk-card-l2{border-left:5px solid var(--rose);} .risk-card-l3{border-left:5px solid #6b1f27;}
+        .risk-card:hover .level-pill{transform:scale(1.05);}
         .factor-list{margin:0 0 8px;padding-left:18px;font-size:12.5px;color:var(--ink);}
         .factor-list li{margin-bottom:3px;}
         .risk-next{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
         .risk-next svg{flex-shrink:0;margin-top:2px;color:var(--primary-purple);}
 
-        /* Clinician Portal page */
-        .clinician-banner{display:flex;align-items:flex-start;gap:9px;background:#F3EEFF;color:var(--ink-soft);border:1px solid var(--line);border-radius:12px;padding:12px 16px;font-size:12.5px;line-height:1.5;margin-bottom:18px;}
+        .clinician-banner{display:flex;align-items:flex-start;gap:9px;background:var(--gradient-blush);color:var(--ink-soft);border:none;border-radius:16px;padding:14px 18px;font-size:12.5px;line-height:1.5;margin-bottom:18px;}
         .clinician-banner svg{flex-shrink:0;margin-top:2px;color:var(--primary-purple);}
         .clinician-grid{display:grid;grid-template-columns:320px 1fr;gap:18px;align-items:start;}
-        .roster-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:20px;}
+        .roster-card{background:#fff;border:none;border-radius:20px;padding:20px;box-shadow:var(--shadow-soft);}
         .roster-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;}
-        .roster-list li{display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:10px;cursor:pointer;}
-        .roster-list li:hover{background:#FCF9F2;}
+        .roster-list li{display:flex;align-items:center;gap:10px;padding:11px 8px;border-radius:14px;cursor:pointer;transition:background .18s ease;}
+        .roster-list li:hover{background:var(--warm-cream);}
         .roster-list li.selected{background:var(--lavender);}
         .roster-info{flex:1;min-width:0;}
         .roster-info strong{display:block;font-size:13px;color:var(--deep-violet);font-weight:600;}
         .roster-info span{font-size:11px;color:var(--ink-soft);}
         .roster-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
         .level-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-        .level-dot.level-l0{background:#3F8F87;} .level-dot.level-l1{background:#F4CE45;}
-        .level-dot.level-l2{background:var(--soft-rose);} .level-dot.level-l3{background:#6b1f27;}
-        .patient-detail-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:22px 24px;}
+        .level-dot.level-l0{background:var(--mint);} .level-dot.level-l1{background:var(--gold);}
+        .level-dot.level-l2{background:var(--rose);} .level-dot.level-l3{background:#6b1f27;}
+        .patient-detail-card{background:#fff;border:none;border-radius:20px;padding:22px 24px;box-shadow:var(--shadow-soft);}
         .patient-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--line);}
         .patient-detail-head h3{font-size:16px;}
         .patient-detail-card h4{display:flex;align-items:center;gap:7px;font-family:var(--font-head);font-size:12.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);margin:18px 0 10px;}
@@ -760,8 +799,9 @@ export default function NARIApp() {
         .event-log li span:last-child{color:var(--ink-soft);}
 
         @media (max-width:900px){
-          .sidebar{width:72px;padding:18px 10px;}
-          .brand span:last-child, .nav-item span, .user-name, .user-sub{display:none;}
+          .sidebar{width:72px;padding:18px 10px;border-radius:0;}
+          .main-col{margin-left:72px;}
+          .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{display:none;}
           .brand{justify-content:center;padding-bottom:20px;}
           .nav-item{justify-content:center;}
           .user-chip{justify-content:center;}
@@ -770,6 +810,7 @@ export default function NARIApp() {
           .twin-grid{grid-template-columns:1fr;}
           .clinician-grid{grid-template-columns:1fr;}
           .pipeline-row{flex-wrap:nowrap;}
+          .guest-banner span{display:none;}
         }
       `}</style>
 
@@ -788,18 +829,27 @@ export default function NARIApp() {
           <a href="#twin" onClick={goTo("twin")} className={`nav-item ${activePage === "twin" ? "active" : ""}`}>
             <HeartPulse size={18} /><span>Health Twin</span>
           </a>
+          <a href="#reminders" onClick={goTo("reminders")} className={`nav-item ${activePage === "reminders" ? "active" : ""}`}>
+            <Pill size={18} /><span>Reminders</span>
+          </a>
+          <a href="#activity" onClick={goTo("activity")} className={`nav-item ${activePage === "activity" ? "active" : ""}`}>
+            <Activity size={18} /><span>Daily Activity</span>
+          </a>
           <a href="#clinician" onClick={goTo("clinician")} className={`nav-item ${activePage === "clinician" ? "active" : ""}`}>
             <Stethoscope size={18} /><span>Clinician Portal</span>
           </a>
         </nav>
         <div className="sidebar-foot">
           <div className="user-chip">
-            <span className="user-avatar"><User size={15} color="#fff" /></span>
+            <span className="user-avatar">{user?.guest ? <UserRound size={15} color="#fff" /> : <User size={15} color="#fff" />}</span>
             <div>
-              <div className="user-name">Ananya</div>
-              <div className="user-sub">Health twin active</div>
+              <div className="user-name">{displayName}</div>
+              <div className="user-sub">{user?.guest ? "Browsing as guest" : "Health twin active"}</div>
             </div>
           </div>
+          <button className="signout-btn" onClick={handleSignOut}>
+            <LogOut size={14} /><span>{user?.guest ? "Exit guest mode" : "Sign out"}</span>
+          </button>
         </div>
       </aside>
 
@@ -807,6 +857,12 @@ export default function NARIApp() {
         <header className="topbar">
           <div className="topbar-title">{PAGE_TITLES[activePage]}</div>
           <div className="topbar-actions">
+            {user?.guest && (
+              <div className="guest-banner">
+                <span>You're browsing as a guest — data won't be saved.</span>
+                <button onClick={() => setView("login")}>Sign in</button>
+              </div>
+            )}
             <button className="icon-btn" onClick={() => setShowNotifPanel((v) => !v)} aria-label="Notifications">
               <Bell size={18} />
               {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
@@ -839,7 +895,7 @@ export default function NARIApp() {
               <section className="welcome-card">
                 <div>
                   <p className="eyebrow-sm">Good to see you</p>
-                  <h1>Welcome back, Ananya</h1>
+                  <h1>Welcome back, {displayName}</h1>
                   <p className="muted">Here's where things stand with your health twin today.</p>
                 </div>
                 <div className="quick-actions">
@@ -849,10 +905,10 @@ export default function NARIApp() {
               </section>
 
               <section className="stat-grid">
-                <div className="stat-card"><Droplets size={18} className="stat-icon rose" /><div className="stat-label">Cycle day</div><div className="stat-value">Day 18</div><div className="stat-sub">Luteal phase</div></div>
-                <div className="stat-card"><TrendingDown size={18} className="stat-icon teal" /><div className="stat-label">Latest flag</div><div className="stat-value">Ferritin low</div><div className="stat-sub">3rd cycle running</div></div>
-                <div className="stat-card"><Activity size={18} className="stat-icon purple" /><div className="stat-label">Adherence</div><div className="stat-value">86%</div><div className="stat-sub">Missed doses on weekends</div></div>
-                <div className="stat-card"><Calendar size={18} className="stat-icon violet" /><div className="stat-label">Next appointment</div><div className="stat-value">Tomorrow</div><div className="stat-sub">Dr. Mehta, 10:00 AM</div></div>
+                <div className="stat-card"><span className="stat-icon rose"><Droplets size={18} /></span><div className="stat-label">Cycle day</div><div className="stat-value">Day 18</div><div className="stat-sub">Luteal phase</div></div>
+                <div className="stat-card"><span className="stat-icon teal"><TrendingDown size={18} /></span><div className="stat-label">Latest flag</div><div className="stat-value">Ferritin low</div><div className="stat-sub">3rd cycle running</div></div>
+                <div className="stat-card"><span className="stat-icon purple"><Activity size={18} /></span><div className="stat-label">Adherence</div><div className="stat-value">86%</div><div className="stat-sub">Missed doses on weekends</div></div>
+                <div className="stat-card"><span className="stat-icon violet"><Calendar size={18} /></span><div className="stat-label">Next appointment</div><div className="stat-value">Tomorrow</div><div className="stat-sub">Dr. Mehta, 10:00 AM</div></div>
               </section>
 
               <section className="pipeline-card">
@@ -914,9 +970,7 @@ export default function NARIApp() {
                       {m.riskSignal && (
                         <div className={`risk-flag risk-${(m.riskSignal.level || "").toLowerCase()}`}>
                           <AlertTriangle size={13} />
-                          <span>
-                            {m.riskSignal.domain} pattern flag ({m.riskSignal.level}) — {m.riskSignal.next_step}
-                          </span>
+                          <span>{m.riskSignal.domain} pattern flag ({m.riskSignal.level}) — {m.riskSignal.next_step}</span>
                         </div>
                       )}
                       {m.evidence && m.evidence.length > 0 && (
@@ -1014,6 +1068,7 @@ export default function NARIApp() {
 
                   {scanState === "done" && scanResult && (
                     <>
+                      <LabReportChart metrics={scanResult.metrics} />
                       <table className="marker-table">
                         <thead><tr><th>Marker</th><th>Value</th><th>Unit</th><th></th></tr></thead>
                         <tbody>
@@ -1054,7 +1109,7 @@ export default function NARIApp() {
               <section className="twin-profile-card">
                 <div className="twin-avatar"><User size={22} color="#fff" /></div>
                 <div className="twin-profile-info">
-                  <h2>Ananya's Digital Health Twin</h2>
+                  <h2>{displayName}'s Digital Health Twin</h2>
                   <p className="muted-sm">Cycle day 18 · Luteal phase · PCOS pattern &amp; iron levels being monitored</p>
                 </div>
                 <span className="twin-badge"><HeartPulse size={13} />Twin active</span>
@@ -1064,14 +1119,7 @@ export default function NARIApp() {
                 <section className="twin-card">
                   <div className="twin-card-head"><Droplets size={15} /><h3>Reproductive context</h3></div>
                   <p className="muted-sm">Last 6 logged cycle lengths (days) - demo data, not yet wired to a live cycle-tracking endpoint.</p>
-                  <div className="cycle-bars">
-                    {DEMO_CYCLE_LENGTHS.map((len, i) => (
-                      <div className="cycle-bar-col" key={i}>
-                        <div className="cycle-bar" style={{ height: `${Math.max(18, (len / 40) * 100)}%` }} />
-                        <span>{len}d</span>
-                      </div>
-                    ))}
-                  </div>
+                  <CycleRing lengths={DEMO_CYCLE_LENGTHS} />
                   <p className="muted-sm">Spread of 11 days across recent cycles - this is one factor behind the PCOS pattern flag below.</p>
                 </section>
 
@@ -1090,18 +1138,21 @@ export default function NARIApp() {
                 <section className="twin-card">
                   <div className="twin-card-head"><FileText size={15} /><h3>Latest biomarkers</h3></div>
                   {scanResult ? (
-                    <table className="marker-table">
-                      <thead><tr><th>Marker</th><th>Value</th><th></th></tr></thead>
-                      <tbody>
-                        {scanResult.metrics.slice(0, 5).map((m, i) => (
-                          <tr key={`${m.biomarker_name}-${i}`}>
-                            <td>{m.biomarker_name}</td>
-                            <td>{m.value} {m.unit || ""}</td>
-                            <td><span className={`flag-pill ${STATUS_TO_FLAG[m.status] || "flagged"}`}>{STATUS_TO_FLAG[m.status] || "flagged"}</span></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <>
+                      <LabReportChart metrics={scanResult.metrics.slice(0, 6)} />
+                      <table className="marker-table">
+                        <thead><tr><th>Marker</th><th>Value</th><th></th></tr></thead>
+                        <tbody>
+                          {scanResult.metrics.slice(0, 5).map((m, i) => (
+                            <tr key={`${m.biomarker_name}-${i}`}>
+                              <td>{m.biomarker_name}</td>
+                              <td>{m.value} {m.unit || ""}</td>
+                              <td><span className={`flag-pill ${STATUS_TO_FLAG[m.status] || "flagged"}`}>{STATUS_TO_FLAG[m.status] || "flagged"}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </>
                   ) : (
                     <p className="muted-sm">No report scanned this session yet. <a href="#reports" onClick={goTo("reports")}>Scan a lab report</a> to populate this from real OCR output.</p>
                   )}
@@ -1152,6 +1203,15 @@ export default function NARIApp() {
               </div>
             </div>
           )}
+
+          {activePage === "reminders" && (
+  <RemindersPage
+    isGuest={!!user?.guest}
+    onTaken={(r) => addNotification(`Marked "${r.name}" as taken`, "just now")}
+  />
+)}
+
+{activePage === "activity" && <ActivityTrackerPage isGuest={!!user?.guest} />}
 
           {activePage === "clinician" && (
             <div className="clinician-shell">

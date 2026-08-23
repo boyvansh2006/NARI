@@ -35,7 +35,7 @@ LOGGER = get_logger(__name__)
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-
+MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
 
 @dataclass
 class LLMMessage:
@@ -55,12 +55,13 @@ def resolve_provider() -> str:
         return configured
     if settings.groq_api_key:
         return "groq"
+    if settings.mistral_api_key:
+        return "mistral"
     if settings.openai_api_key:
         return "openai"
     if settings.gemini_api_key:
         return "gemini"
     return "mock"
-
 
 def complete_json(
     system_prompt: str,
@@ -89,13 +90,17 @@ def complete_json(
             return _call_openai_compatible(
                 GROQ_URL, settings.groq_api_key, settings.groq_model, system_prompt, messages, temperature
             )
+        if provider == "mistral" and settings.mistral_api_key:
+            return _call_openai_compatible(
+                MISTRAL_URL, settings.mistral_api_key, settings.mistral_model, system_prompt, messages, temperature
+            )
         if provider == "openai" and settings.openai_api_key:
             return _call_openai_compatible(
                 OPENAI_URL, settings.openai_api_key, settings.openai_model, system_prompt, messages, temperature
             )
         if provider == "gemini" and settings.gemini_api_key:
             return _call_gemini(settings.gemini_api_key, settings.gemini_model, system_prompt, messages, temperature)
-    except Exception as exc:  # network error, bad JSON, rate limit, etc.
+    except Exception as exc:
         LOGGER.warning(f"LLM provider '{provider}' call failed, falling back to mock responder: {exc}")
 
     from app.services.mock_responses import mock_reply

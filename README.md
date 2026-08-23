@@ -230,6 +230,17 @@ uvicorn app.main:app --reload --app-dir .
 > 🚀 **Backend runs at:** `http://127.0.0.1:8000`  
 > 📖 **Interactive Swagger UI:** `http://127.0.0.1:8000/docs`
 
+### Windows OCR setup
+
+Text-based PDFs work through `pypdf` alone. To read scanned PDFs and phone photos, install Tesseract OCR and Poppler, then either add their executable folders to `PATH` or set the following values in the root `.env` file:
+
+```ini
+TESSERACT_CMD="C:\Program Files\Tesseract-OCR\tesseract.exe"
+POPPLER_PATH="C:\poppler\Library\bin"
+```
+
+Restart the terminal and verify the installation with `tesseract --version` and `pdftoppm -h` before starting Uvicorn. Without a cloud extraction key, NARI now performs local best-effort extraction of individual lab rows; when `GROQ_API_KEY` is configured, it uses the cloud extractor for more complex layouts.
+
 ---
 
 ### 3. Frontend Setup
