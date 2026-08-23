@@ -30,14 +30,6 @@ LOGGER = get_logger(__name__)
 
 
 class ReportService:
-    """
-    Reused from Vitalis's ReportService: upload -> temp file -> parse ->
-    persist -> cleanup. The Supabase Storage upload step is dropped (this
-    build keeps things local-disk-only for a zero-config dev setup); swap
-    _save_upload_to_tempfile/_cleanup_tempfile for a real object-storage
-    client if you want uploaded files retained beyond parsing.
-    """
-
     def __init__(self, session: AsyncSession, parser_service: ParserService | None = None) -> None:
         self.session = session
         self.parser_service = parser_service or ParserService()
@@ -90,18 +82,6 @@ class ReportService:
                 self._cleanup_tempfile(temp_path)
 
     async def _sync_lab_results(self, report_id: UUID, user_id: UUID | None, raw_json_data: dict) -> None:
-        """Normalization step flagged as missing by database/models.py's
-        LabResult docstring ("do not store all extracted clinical
-        information only as an opaque JSON blob" - GGSIPU2617_Vitalis_
-        Features_and_Recommended_Architecture.pdf section 14): mirrors each
-        biomarker from the parser's `metrics` list into its own LabResult
-        row, keyed to this report and (if known) this patient, so the Risk
-        Prediction Agent / Laboratory Agent (see services/dht_service.py,
-        app/agents/risk_engine.py) can query, trend and compare individual
-        biomarkers across uploads instead of only reading opaque per-upload
-        JSON. Best-effort: a malformed metric is skipped, not fatal to the
-        whole upload.
-        """
         metrics = raw_json_data.get("metrics") or []
         if not isinstance(metrics, list):
             return
@@ -124,15 +104,20 @@ class ReportService:
                 )
             )
 
-    async def get_report(self, report_id: UUID) -> ReportDetailResponse:
-        report = await self._fetch_report_or_404(report_id)
+    async def get_report(self, report_id: UUID, user_id: UUID | None = None) -> ReportDetailResponse:
+        report = await self._fetch_report_or_404(report_id, user_id)
         return ReportDetailResponse(message="Report retrieved successfully", report=self._to_schema(report, ReportRead))
 
-    async def list_reports(self, page: int = 1, page_size: int = 20) -> ReportListResponse:
+    async def list_reports(self, page: int = 1, page_size: int = 20, user_id: UUID | None = None) -> ReportListResponse:
         offset = (page - 1) * page_size
-        total = int((await self.session.execute(select(func.count()).select_from(Report))).scalar_one())
+        base_query = select(Report)
+        count_query = select(func.count()).select_from(Report)
+        if user_id is not None:
+            base_query = base_query.where(Report.user_id == user_id)
+            count_query = count_query.where(Report.user_id == user_id)
 
-        statement = select(Report).order_by(Report.uploaded_at.desc()).offset(offset).limit(page_size)
+        total = int((await self.session.execute(count_query)).scalar_one())
+        statement = base_query.order_by(Report.uploaded_at.desc()).offset(offset).limit(page_size)
         rows = (await self.session.execute(statement)).scalars().all()
         total_pages = ceil(total / page_size) if total else 0
 
@@ -141,8 +126,8 @@ class ReportService:
             pagination=PaginationMeta(page=page, page_size=page_size, total=total, total_pages=total_pages),
         )
 
-    async def delete_report(self, report_id: UUID) -> ReportDeleteResponse:
-        report = await self._fetch_report_or_404(report_id)
+    async def delete_report(self, report_id: UUID, user_id: UUID | None = None) -> ReportDeleteResponse:
+        report = await self._fetch_report_or_404(report_id, user_id)
         try:
             await self.session.delete(report)
             await self.session.commit()
@@ -151,8 +136,10 @@ class ReportService:
             raise DatabaseOperationError(str(exc)) from exc
         return ReportDeleteResponse(message="Report deleted successfully", report_id=report_id)
 
-    async def _fetch_report_or_404(self, report_id: UUID) -> Report:
+    async def _fetch_report_or_404(self, report_id: UUID, user_id: UUID | None = None) -> Report:
         statement = select(Report).where(Report.id == report_id)
+        if user_id is not None:
+            statement = statement.where(Report.user_id == user_id)
         report = (await self.session.execute(statement)).scalar_one_or_none()
         if report is None:
             raise ReportNotFoundError()

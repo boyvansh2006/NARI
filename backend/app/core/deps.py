@@ -21,3 +21,18 @@ async def get_current_user_id(authorization: str | None = Header(default=None)) 
         return uuid.UUID(payload["sub"])
     except (KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+
+async def get_optional_user_id(authorization: str | None = Header(default=None)) -> uuid.UUID | None:
+    """Returns the authenticated user UUID if a valid Bearer token is provided,
+    otherwise returns None for guest sessions."""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
+    token = authorization.removeprefix("Bearer ").strip()
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    try:
+        return uuid.UUID(payload["sub"])
+    except (KeyError, ValueError):
+        return None

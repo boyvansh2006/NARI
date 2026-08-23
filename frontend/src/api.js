@@ -1,4 +1,19 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const TOKEN_KEY = "nari_token";
+
+export function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function setToken(token) {
+  if (token) localStorage.setItem(TOKEN_KEY, token);
+  else localStorage.removeItem(TOKEN_KEY);
+}
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
 
 async function handleJson(res) {
   if (!res.ok) {
@@ -14,27 +29,17 @@ async function handleJson(res) {
   return res.json();
 }
 
-/** Text chat -> the real multi-agent LangGraph orchestrator (Emergency
- * check -> Router -> Clinical Knowledge/RAG -> specialist agent -> Risk
- * Prediction -> Care Plan -> Follow-up; see backend/app/agents/graph.py),
- * using whichever LLM provider is configured server-side (Gemini/OpenAI/
- * Groq, or an offline deterministic mock if none is set). Falls back to
- * NARI's older single-call router if the graph itself fails. Pass
- * `patientId` once real accounts exist to enable longitudinal risk
- * signals (see backend/app/services/dht_service.py); safe to omit. */
+/** Text chat -> LangGraph multi-agent orchestrator */
 export async function sendChatMessage(message, history = [], profile = null, patientId = null) {
   const res = await fetch(`${API_BASE}/api/v1/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ message, history, profile, patient_id: patientId }),
   });
-  return handleJson(res); // { agent, reply, urgent, evidence, risk_signal, care_plan, follow_up, router_reason }
+  return handleJson(res);
 }
 
-/** Voice-to-voice round trip. Pass either `audioBlob` (recorded audio -
- * used if the server has faster-whisper configured) or `transcript`
- * (already-transcribed text, e.g. from the browser's own
- * SpeechRecognition, used as a fallback / when no audio is given). */
+/** Voice converse round trip */
 export async function voiceConverse({ audioBlob, transcript, history = [] }) {
   const form = new FormData();
   if (audioBlob) form.append("audio", audioBlob, "utterance.webm");
@@ -43,66 +48,59 @@ export async function voiceConverse({ audioBlob, transcript, history = [] }) {
 
   const res = await fetch(`${API_BASE}/api/v1/voice/converse`, {
     method: "POST",
+    headers: authHeaders(),
     body: form,
   });
-  return handleJson(res); // { transcript, agent, reply, urgent, audio_base64, tts_available, stt_available }
+  return handleJson(res);
 }
 
 export async function getVoiceStatus() {
   const res = await fetch(`${API_BASE}/api/v1/voice/status`);
-  return handleJson(res); // { stt_available, tts_available }
+  return handleJson(res);
 }
 
-/** Report upload -> Vitalis's OCR + PDF/image parsing pipeline. */
+/** Report upload & management (with user isolation) */
 export async function uploadReport(file) {
   const form = new FormData();
   form.append("file", file);
   const res = await fetch(`${API_BASE}/api/v1/reports/upload`, {
     method: "POST",
+    headers: authHeaders(),
     body: form,
   });
-  return handleJson(res); // { message, report: { id, original_filename, uploaded_at, report_json, ... } }
-}
-
-export async function listReports(page = 1, pageSize = 20) {
-  const res = await fetch(`${API_BASE}/api/v1/reports?page=${page}&page_size=${pageSize}`);
-  return handleJson(res); // { items, pagination }
-}
-
-/** Fetch a report with the complete structured OCR result. */
-export async function getReport(reportId) {
-  const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`);
-  return handleJson(res); // { message, report: { report_json: { metrics: [...] } } }
-}
-
-export async function deleteReport(reportId) {
-  const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`, { method: "DELETE" });
   return handleJson(res);
 }
 
-
-const TOKEN_KEY = "nari_token";
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-function authHeaders() {
-  const t = getToken();
-  return t ? { Authorization: `Bearer ${t}` } : {};
+export async function listReports(page = 1, pageSize = 20) {
+  const res = await fetch(`${API_BASE}/api/v1/reports?page=${page}&page_size=${pageSize}`, {
+    headers: authHeaders(),
+  });
+  return handleJson(res);
 }
 
-/** Auth */
+export async function getReport(reportId) {
+  const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`, {
+    headers: authHeaders(),
+  });
+  return handleJson(res);
+}
+
+export async function deleteReport(reportId) {
+  const res = await fetch(`${API_BASE}/api/v1/reports/${reportId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  return handleJson(res);
+}
+
+/** Auth endpoints */
 export async function registerUser(email, password, fullName) {
   const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password, full_name: fullName }),
   });
-  return handleJson(res); // { access_token, user }
+  return handleJson(res);
 }
 
 export async function loginUser(email, password) {
@@ -111,7 +109,7 @@ export async function loginUser(email, password) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
-  return handleJson(res); // { access_token, user }
+  return handleJson(res);
 }
 
 /** Medication reminders (requires auth) */
@@ -119,6 +117,7 @@ export async function fetchReminders() {
   const res = await fetch(`${API_BASE}/api/v1/reminders`, { headers: authHeaders() });
   return handleJson(res);
 }
+
 export async function createReminderApi(data) {
   const res = await fetch(`${API_BASE}/api/v1/reminders`, {
     method: "POST",
@@ -127,6 +126,7 @@ export async function createReminderApi(data) {
   });
   return handleJson(res);
 }
+
 export async function toggleReminderApi(id) {
   const res = await fetch(`${API_BASE}/api/v1/reminders/${id}/toggle`, {
     method: "POST",
@@ -134,6 +134,7 @@ export async function toggleReminderApi(id) {
   });
   return handleJson(res);
 }
+
 export async function deleteReminderApi(id) {
   const res = await fetch(`${API_BASE}/api/v1/reminders/${id}`, {
     method: "DELETE",
@@ -142,11 +143,12 @@ export async function deleteReminderApi(id) {
   return handleJson(res);
 }
 
-/** Daily activity (requires auth) */
+/** Daily activity tracker (requires auth) */
 export async function getTodayActivity() {
   const res = await fetch(`${API_BASE}/api/v1/activity/today`, { headers: authHeaders() });
   return handleJson(res);
 }
+
 export async function updateTodayActivity(patch) {
   const res = await fetch(`${API_BASE}/api/v1/activity/today`, {
     method: "PUT",
@@ -155,6 +157,7 @@ export async function updateTodayActivity(patch) {
   });
   return handleJson(res);
 }
+
 export async function getActivityHistory(days = 7) {
   const res = await fetch(`${API_BASE}/api/v1/activity/history?days=${days}`, { headers: authHeaders() });
   return handleJson(res);
