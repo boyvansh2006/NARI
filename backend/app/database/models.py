@@ -8,6 +8,7 @@ from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator, CHAR
 
+
 class Base(DeclarativeBase):
     pass
 
@@ -400,9 +401,15 @@ class DailyActivityLog(Base):
     meals: Mapped[list] = mapped_column(JSON, default=list)  # [{"text": "...", "time": "..."}]
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    class GoogleFitToken(Base):
-     patient_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), primary_key=True)
-     access_token: Mapped[str] = mapped_column(Text, nullable=False)
-     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
-     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+class GoogleFitToken(Base):
+    """OAuth tokens for a patient's connected Google Fit account. One row
+    per patient; refreshed in place as the access token expires."""
+
+    __tablename__ = "google_fit_tokens"
+
+    patient_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), primary_key=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
