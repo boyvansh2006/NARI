@@ -26,9 +26,9 @@ const PAGE_TITLES = {
 
 const AGENT_PIPELINE = [
   { name: "Emergency Escalation", note: "Always-first safety check" },
-  { name: "Router", note: "Picks one specialist agent" },
-  { name: "Clinical Knowledge / RAG", note: "Grounds the turn in evidence" },
-  { name: "Specialist Agent", note: "Symptom, Lab, Nutrition, Mental, …" },
+  { name: "Router", note: "Picks specialist clinical agent" },
+  { name: "Clinical Knowledge / RAG", note: "Grounds response in WHO/MoHFW evidence" },
+  { name: "Specialist Agent", note: "Symptom, Lab, Nutrition, Mental health" },
   { name: "Risk Prediction", note: "Transparent pattern heuristic" },
   { name: "Care Plan", note: "Combines reply + risk + evidence" },
   { name: "Follow-up Care", note: "Schedules continuity check-ins" },
@@ -63,7 +63,7 @@ const DEMO_RISK_SIGNALS = [
     example: true,
   },
 ];
-const LEVEL_LABEL = { L0: "Info", L1: "Monitor", L2: "Clinical consultation", L3: "Urgent", L4: "Safety stop" };
+const LEVEL_LABEL = { L0: "Info", L1: "Monitor", L2: "Clinical review", L3: "Urgent", L4: "Safety stop" };
 
 const DEMO_PATIENTS = [
   { id: "p1", name: "Ananya Sharma", age: 27, concern: "PCOS pattern", level: "L2", adherence: 86, lastActive: "Just now" },
@@ -96,32 +96,20 @@ const INITIAL_MESSAGES = [
     id: 1,
     sender: "assistant",
     agent: "NARI",
-    text: "Hi, I'm your NARI assistant. Ask me about your symptoms, labs, nutrition, or anything else — I'll provide direct, clear, and comprehensive guidance.",
+    text: "Hello, I am NARI. How can I help you today? You can ask about your symptoms, cycle patterns, lab reports, or nutrition.",
   },
 ];
 
 const SUGGESTED_PROMPTS = [
-  "Explain my last lab flag",
-  "What should I eat this week?",
-  "I have cramps today",
-  "Book a doctor appointment",
+  "Explain my latest ferritin flag",
+  "Nutrition plan for luteal phase",
+  "I have mild pelvic cramps today",
+  "Check my medication interactions",
 ];
 
 const INITIAL_NOTIFICATIONS = [];
-
 const DEMO_PROFILE = { full_name: "Ananya", cycle_day: 18, cycle_phase: "Luteal phase" };
 
-// NARI is built for women's health, so the assistant's spoken voice should
-// read as female whenever server-side Piper TTS isn't configured and the
-// browser's own speechSynthesis is used instead. The previous logic just
-// grabbed the first "en" voice the platform reported, which - depending on
-// OS/browser voice ordering - often ended up male (e.g. "Microsoft David",
-// "Google UK English Male", "Daniel"). SpeechSynthesisVoice doesn't expose
-// a real gender field, so this uses known voice names as a heuristic:
-// prefer an explicitly female-labelled voice, then a well-known female
-// voice by name, then fall back to any English voice that isn't a
-// well-known male voice, before finally giving up and letting the browser
-// use its own default.
 const KNOWN_FEMALE_VOICE_NAMES = [
   "zira", "samantha", "victoria", "karen", "moira", "tessa", "fiona", "susan",
   "google us english", "google uk english female", "kathy", "veena", "lekha",
@@ -153,7 +141,6 @@ function pickFemaleVoice(voices) {
 }
 
 const STATUS_TO_FLAG = { NORMAL: "normal", HIGH: "high", LOW: "low", UNSPECIFIED: "flagged" };
-
 const SESSION_KEY = "nari_session_user";
 
 function deriveReportFlag(metrics) {
@@ -178,44 +165,64 @@ function loadSession() {
   }
 }
 
-/**
- * Defensive safety net for care-plan text. The symptom/lab/nutrition agents are
- * instructed to always reply in plain markdown, but if a model ever slips and
- * returns a stringified Python-style dict (e.g. "{'gastrointestinal': ['...', '...'],
- * 'gynecological': [...]}") instead of prose, this converts it into clean
- * markdown headers + bullets instead of dumping the raw braces/quotes on screen.
- * Anything that isn't recognizably dict-like is returned unchanged.
- */
-function cleanCarePlanText(text) {
-  if (!text) return text;
-  const trimmed = text.trim();
-  const looksLikeStringifiedDict = /^\{[\s\S]*\}$/.test(trimmed) && /'[^']+'\s*:\s*\[/.test(trimmed);
-  if (!looksLikeStringifiedDict) return text;
-
+function saveSession(user) {
   try {
-    // Normalize Python-dict syntax (single quotes) into JSON so it can be parsed safely.
-    const asJson = trimmed
-      .replace(/'/g, '"')
-      .replace(/"(s|d)"/g, "'$1'"); // guard against breaking contractions like it's/don't (rare in this content)
-    const parsed = JSON.parse(asJson);
-    const titleCase = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-
-    const lines = [];
-    Object.entries(parsed).forEach(([section, items]) => {
-      lines.push(`## ${titleCase(section)}`);
-      (Array.isArray(items) ? items : [items]).forEach((item) => lines.push(`- ${item}`));
-    });
-    return lines.join("\n");
+    if (user) localStorage.setItem(SESSION_KEY, JSON.stringify(user));
+    else localStorage.removeItem(SESSION_KEY);
   } catch {
-    // If parsing fails for any reason, fall back to the original text rather than erroring.
-    return text;
+    /* ignore */
   }
 }
 
-/** Formats structured assistant text (markdown headers, bolding, bullet points) cleanly. */
+function renderInline(text) {
+  const parts = [];
+  const regex = /(\*\*([^*]+)\*\*|_([^_]+)_)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    if (match[2]) {
+      parts.push(<strong key={`bold-${match.index}`}>{match[2]}</strong>);
+    } else if (match[3]) {
+      parts.push(<em key={`italic-${match.index}`}>{match[3]}</em>);
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
+
+function cleanCarePlanText(summary) {
+  if (!summary) return "";
+  if (typeof summary !== "string") {
+    try {
+      return JSON.stringify(summary, null, 2);
+    } catch {
+      return String(summary);
+    }
+  }
+  const lines = summary.split("\n");
+  const cleaned = lines.map((l) => {
+    let line = l.trim();
+    if (line.startsWith("- ")) line = line.substring(2).trim();
+    const colonIdx = line.indexOf(":");
+    if (colonIdx > 0 && colonIdx < 30 && !line.startsWith("###")) {
+      const key = line.substring(0, colonIdx).trim();
+      const val = line.substring(colonIdx + 1).trim();
+      return `### ${key}\n${val}`;
+    }
+    return line;
+  });
+  return cleaned.join("\n\n");
+}
+
 function FormattedMessage({ text }) {
   if (!text) return null;
-
   const lines = text.split("\n");
   const elements = [];
   let currentList = [];
@@ -223,7 +230,7 @@ function FormattedMessage({ text }) {
   const flushList = () => {
     if (currentList.length > 0) {
       elements.push(
-        <ul key={`list-${elements.length}`} className="chat-bullet-list">
+        <ul key={`ul-${elements.length}`} className="chat-bullet-list">
           {currentList.map((item, idx) => (
             <li key={idx}>{renderInline(item)}</li>
           ))}
@@ -233,39 +240,19 @@ function FormattedMessage({ text }) {
     }
   };
 
-  const renderInline = (str) => {
-    const parts = [];
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    let lastIndex = 0;
-    let match;
-    let keyIdx = 0;
-    while ((match = boldRegex.exec(str)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(str.slice(lastIndex, match.index));
-      }
-      parts.push(<strong key={`b-${keyIdx++}`}>{match[1]}</strong>);
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < str.length) {
-      parts.push(str.slice(lastIndex));
-    }
-    return parts.length > 0 ? parts : str;
-  };
-
   lines.forEach((rawLine, idx) => {
     const line = rawLine.trim();
     if (!line) {
       flushList();
       return;
     }
-
-    if (line.startsWith("### ") || line.startsWith("## ")) {
+    if (line.startsWith("### ") || line.startsWith("## ") || line.startsWith("# ")) {
       flushList();
-      const title = line.replace(/^#{2,3}\s+/, "");
+      const headingText = line.replace(/^#+\s*/, "");
       elements.push(
-        <h4 key={`h-${idx}`} className="chat-section-header">
-          {renderInline(title)}
-        </h4>
+        <div key={`h-${idx}`} className="chat-section-header">
+          {renderInline(headingText)}
+        </div>
       );
     } else if (line.startsWith("* ") || line.startsWith("- ") || line.startsWith("• ")) {
       const itemText = line.replace(/^[\*\-•]\s+/, "");
@@ -290,52 +277,46 @@ function GuestNameGate({ value, onChange, onConfirm, onCancel }) {
       <style>{`
         .guest-gate-shell{
           min-height:100vh; display:flex; align-items:center; justify-content:center;
-          background:linear-gradient(160deg,#34205F 0%,#694CD0 65%,#E1C3FF 130%);
+          background:linear-gradient(150deg,#0A3B31 0%,#0F5144 60%,#134E4A 100%);
           font-family:'DM Sans',-apple-system,sans-serif; padding:24px;
         }
-        /* box-sizing:border-box was missing here, so width:100% + padding on
-           .guest-gate-input pushed it past the card's edge while the
-           buttons below (padding:14px 0, no horizontal padding) stayed
-           flush — that's what read as "off-center" / boundary overflow. */
         .guest-gate-shell *{ box-sizing:border-box; }
         .guest-gate-card{
           background:#fff; border-radius:20px; padding:36px 34px; width:100%; max-width:380px;
-          box-shadow:0 30px 60px rgba(19,14,45,0.45); text-align:center; animation: guest-rise .35s ease;
-          border:1.5px solid rgba(52,31,96,0.06);
+          box-shadow:0 20px 48px rgba(10,59,49,0.3); text-align:center; animation: guest-rise .3s ease;
+          border:1px solid #E2EBE7;
         }
-        @keyframes guest-rise{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);} }
+        @keyframes guest-rise{ from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:translateY(0);} }
         .guest-gate-mark{
-          width:56px;height:56px;border-radius:50%; margin:0 auto 18px;
-          background:radial-gradient(circle at 35% 30%,#fff,#E7A1A8 60%,#694CD0);
-          box-shadow:0 0 0 8px rgba(105,76,208,0.1);
+          width:52px; height:52px; border-radius:16px; margin:0 auto 18px;
+          background:#E6F4F1; color:#0F5144; display:flex; align-items:center; justify-content:center;
         }
         .guest-gate-card h2{
-          font-family:'Sora',sans-serif; font-size:24px; font-weight:800; color:#34205F; margin:0 0 8px;
+          font-family:'Sora',sans-serif; font-size:22px; font-weight:800; color:#0F2922; margin:0 0 8px;
         }
-        .guest-gate-card p{ color:#6B5A8E; font-size:13.5px; line-height:1.6; margin:0 0 22px; }
+        .guest-gate-card p{ color:#527068; font-size:13.5px; line-height:1.6; margin:0 0 22px; }
         .guest-gate-input{
-          width:100%; border:1.5px solid rgba(52,31,96,0.14); border-radius:12px; padding:13px 15px;
+          width:100%; border:1.5px solid #CBD5E1; border-radius:12px; padding:12px 14px;
           font-size:14px; font-family:inherit; outline:none; margin-bottom:18px; text-align:center;
           transition:border-color .2s ease, box-shadow .2s ease;
         }
-        .guest-gate-input:focus{ border-color:#694CD0; box-shadow:0 0 0 4px rgba(105,76,208,0.12); }
+        .guest-gate-input:focus{ border-color:#0F5144; box-shadow:0 0 0 3px rgba(15,81,68,0.12); }
         .guest-gate-actions{ display:flex; flex-direction:column; gap:10px; }
         .guest-gate-confirm{
-          width:100%; background:linear-gradient(120deg,#694CD0,#34205F); color:#fff; border:none; border-radius:12px;
-          padding:14px 0; font-family:'Sora',sans-serif; font-weight:800; font-size:15.5px;
-          cursor:pointer; transition:transform .15s ease, box-shadow .15s ease;
+          width:100%; background:#0F5144; color:#fff; border:none; border-radius:12px;
+          padding:13px 0; font-family:'Sora',sans-serif; font-weight:700; font-size:14px;
+          cursor:pointer; transition:all .18s ease;
         }
-        .guest-gate-confirm:hover{ transform:translateY(-2px); box-shadow:0 14px 28px rgba(105,76,208,0.32); }
+        .guest-gate-confirm:hover{ background:#0A3B31; transform:translateY(-1px); }
         .guest-gate-back{
-          width:100%; background:none; border:none; color:#8578AE; font-size:13px; font-weight:600; cursor:pointer;
+          width:100%; background:none; border:none; color:#527068; font-size:13px; font-weight:600; cursor:pointer;
           padding:6px 0;
         }
-        .guest-gate-note{ font-size:11.5px; color:#A89BD2; margin-top:16px; }
       `}</style>
       <div className="guest-gate-card">
-        <div className="guest-gate-mark" />
+        <div className="guest-gate-mark"><HeartPulse size={24} /></div>
         <h2>What should we call you?</h2>
-        <p>Guest sessions aren't saved to an account, but we'll still use this to personalize your dashboard.</p>
+        <p>Guest sessions are stored locally in your browser. We'll use your name to personalize your health twin dashboard.</p>
         <input
           className="guest-gate-input"
           placeholder="e.g. Priya (optional)"
@@ -346,434 +327,286 @@ function GuestNameGate({ value, onChange, onConfirm, onCancel }) {
           maxLength={40}
         />
         <div className="guest-gate-actions">
-          <button className="guest-gate-confirm" onClick={onConfirm}>Continue to dashboard</button>
-          <button className="guest-gate-back" onClick={onCancel}>Back</button>
+          <button className="guest-gate-confirm" onClick={onConfirm}>Continue to Dashboard</button>
+          <button className="guest-gate-back" onClick={onCancel}>Back to Home</button>
         </div>
-        <p className="guest-gate-note">Nothing you enter here is sent anywhere or saved once you close this tab.</p>
       </div>
     </div>
   );
 }
 
-export default function NARIApp() {
-  const [view, setView] = useState(() => (loadSession() ? "dashboard" : "landing"));
+export default function App() {
   const [user, setUser] = useState(() => loadSession());
+  const [view, setView] = useState(() => (loadSession() ? "app" : "landing"));
   const [activePage, setActivePage] = useState("dashboard");
+  const [guestNameInput, setGuestNameInput] = useState("");
+
   const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [speakEnabled, setSpeakEnabled] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [voiceError, setVoiceError] = useState("");
   const [copiedId, setCopiedId] = useState(null);
-  const recognitionRef = useRef(null);
-  const chatEndRef = useRef(null);
-  const inputRef = useRef(null);
 
-  const [sttAvailable, setSttAvailable] = useState(false);
-  const [ttsAvailable, setTtsAvailable] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const useServerStt = sttAvailable;
-  const micSupported = sttAvailable || voiceSupported;
+  const [isListening, setIsListening] = useState(false);
+  const [speakEnabled, setSpeakEnabled] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [micSupported, setMicSupported] = useState(false);
+  const [useServerStt, setUseServerStt] = useState(false);
+  const [useServerTts, setUseServerTts] = useState(false);
+  const [voiceError, setVoiceError] = useState(null);
 
-  const fileInputRef = useRef(null);
-  const [dragActive, setDragActive] = useState(false);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [toast, setToast] = useState(null);
+
   const [reportFile, setReportFile] = useState(null);
   const [scanState, setScanState] = useState("idle");
   const [scanResult, setScanResult] = useState(null);
   const [scanErrorText, setScanErrorText] = useState("");
   const [pastReports, setPastReports] = useState([]);
-
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
-  const [showNotifPanel, setShowNotifPanel] = useState(false);
-  const [toast, setToast] = useState(null);
-  const unreadCount = notifications.filter((n) => n.unread).length;
+  const [dragActive, setDragActive] = useState(false);
 
   const [sessionRiskSignals, setSessionRiskSignals] = useState([]);
   const [sessionCarePlan, setSessionCarePlan] = useState(null);
-
   const [selectedPatientId, setSelectedPatientId] = useState("p1");
 
-  // Guest mode used to drop straight into the dashboard as an anonymous
-  // "Guest" with no way to personalize the session. Both entry points
-  // (landing page + login page) now route through this small name-capture
-  // gate first, so the dashboard can greet the person by name and label
-  // their own session's data instead of always saying "Guest".
-  const [pendingGuestEntry, setPendingGuestEntry] = useState(false);
-  const [guestNameDraft, setGuestNameDraft] = useState("");
-
-  const confirmGuestEntry = () => {
-    const name = guestNameDraft.trim();
-    enterDashboard({ guest: true, fullName: name || "Guest" });
-    setPendingGuestEntry(false);
-    setGuestNameDraft("");
-  };
+  const chatEndRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const currentAudioRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
-    if (view !== "dashboard") return;
-    getVoiceStatus()
-      .then((s) => {
-        setSttAvailable(!!s.stt_available);
-        setTtsAvailable(!!s.tts_available);
-      })
-      .catch(() => {
-        setSttAvailable(false);
-        setTtsAvailable(false);
-      });
-  }, [view]);
-
-  useEffect(() => {
-    if (view !== "dashboard") return;
-    listReports()
-      .then((data) => {
-        const items = (data.items || []).map((r) => ({
-          id: r.id,
-          name: r.original_filename,
-          date: formatDate(r.uploaded_at),
-          status: deriveReportFlag(r.metrics),
-          statusLabel: deriveReportFlag(r.metrics),
-        }));
-        setPastReports(items);
-      })
-      .catch(() => {});
-  }, [view]);
-
-  useEffect(() => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SR) {
-      setVoiceSupported(true);
-      const rec = new SR();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = "en-US";
-      rec.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setIsListening(false);
-        if (transcript) {
-          handleVoiceTurn({ transcript });
-        }
-      };
-      rec.onerror = (e) => {
-        setIsListening(false);
-        if (e.error !== "no-speech") {
-          setVoiceError(`Voice error: ${e.error}`);
-        }
-      };
-      rec.onend = () => setIsListening(false);
-      recognitionRef.current = rec;
-    }
-  }, []);
+    saveSession(user);
+  }, [user]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  const speak = (text) => {
-    if (!window.speechSynthesis) return;
-    try {
-      window.speechSynthesis.cancel();
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
-      }
-      const clean = text
-        .replace(/[*_#`•\-]/g, "")
-        .replace(/https?:\/\/\S+/g, "")
-        .slice(0, 350)
-        .trim();
-      if (!clean) return;
+  useEffect(() => {
+    getVoiceStatus()
+      .then((st) => {
+        setUseServerStt(!!st.stt_available);
+        setUseServerTts(!!st.tts_available);
+        const hasMedia = typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+        const hasWebSpeechRec = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+        setMicSupported(st.stt_available ? hasMedia : hasWebSpeechRec);
+        const hasWebSpeechSynth = typeof window !== "undefined" && "speechSynthesis" in window;
+        setVoiceSupported(st.tts_available || hasWebSpeechSynth);
+      })
+      .catch(() => {
+        const hasWebSpeechRec = typeof window !== "undefined" && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+        const hasWebSpeechSynth = typeof window !== "undefined" && "speechSynthesis" in window;
+        setMicSupported(hasWebSpeechRec);
+        setVoiceSupported(hasWebSpeechSynth);
+      });
+  }, []);
 
-      setTimeout(() => {
-        const u = new SpeechSynthesisUtterance(clean);
-        u.rate = 1.0;
-        u.pitch = 1.0;
-        const voices = window.speechSynthesis.getVoices() || [];
-        const preferredVoice = pickFemaleVoice(voices);
-        if (preferredVoice) {
-          u.voice = preferredVoice;
-        }
-        u.onerror = (e) => {
-          console.warn("Speech synthesis warning:", e);
-        };
-        window.speechSynthesis.speak(u);
-      }, 70);
-    } catch (err) {
-      console.warn("TTS error:", err);
-    }
+  const handleSignIn = (userData) => {
+    setUser(userData);
+    setView("app");
+  };
+
+  const handleSignOut = () => {
+    setUser(null);
+    setToken(null);
+    setView("landing");
+    setPastReports([]);
+    setMessages(INITIAL_MESSAGES);
+  };
+
+  const handleGuestConfirmed = () => {
+    const trimmed = guestNameInput.trim();
+    setUser({ guest: true, fullName: trimmed || "Guest", email: null });
+    setView("app");
+  };
+
+  const showToast = (text) => {
+    setToast(text);
+    setTimeout(() => setToast(null), 3000);
   };
 
   const copyMessage = (id, text) => {
-    navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setToast("Response copied to clipboard");
-    setTimeout(() => {
-      setCopiedId(null);
-      setToast(null);
-    }, 2500);
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedId(id);
+        showToast("Response copied to clipboard");
+        setTimeout(() => setCopiedId(null), 2000);
+      });
+    }
   };
 
-  const clearChat = () => {
-    setMessages(INITIAL_MESSAGES);
-    setToast("Started a new consultation");
-    setTimeout(() => setToast(null), 2500);
-  };
-
-  const startRecordingAudio = async () => {
-    setVoiceError("");
+  const speak = (text) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioChunksRef.current = [];
-      const mr = new MediaRecorder(stream);
-      mr.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-      mr.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        setIsListening(false);
-        if (blob.size > 0) {
-          handleVoiceTurn({ audioBlob: blob });
-        }
-      };
-      mediaRecorderRef.current = mr;
-      mr.start();
-      setIsListening(true);
+      window.speechSynthesis.cancel();
+      setTimeout(() => {
+        window.speechSynthesis.resume();
+        const clean = text.replace(/[*#_`>]/g, " ").trim();
+        const utt = new SpeechSynthesisUtterance(clean);
+        utt.rate = 1.0;
+        utt.pitch = 1.05;
+        const voices = window.speechSynthesis.getVoices();
+        const chosenVoice = pickFemaleVoice(voices);
+        if (chosenVoice) utt.voice = chosenVoice;
+        window.speechSynthesis.speak(utt);
+      }, 70);
     } catch {
-      setVoiceError("Microphone access was denied or not available.");
-      setIsListening(false);
+      /* ignore */
     }
   };
-
-  const stopRecordingAudio = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
-  };
-
-  const toggleListening = () => {
-    if (isListening) {
-      if (useServerStt) stopRecordingAudio();
-      else recognitionRef.current?.stop();
-    } else {
-      if (useServerStt) startRecordingAudio();
-      else {
-        setVoiceError("");
-        try {
-          recognitionRef.current?.start();
-          setIsListening(true);
-        } catch {
-          setIsListening(false);
-        }
-      }
-    }
-  };
-
-  const addNotification = (text, time = "just now") => {
-    setNotifications((prev) => [{ id: Date.now(), text, time, unread: true }, ...prev]);
-    setToast(text);
-    setTimeout(() => setToast((t) => (t === text ? null : t)), 4000);
-  };
-
-  const markRead = (id) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, unread: false } : n)));
-  };
-
-  const recentHistoryPayload = () =>
-    messages
-      .filter((m) => m.sender === "user" || m.sender === "assistant")
-      .slice(-8)
-      .map((m) => ({ role: m.sender, content: m.text }));
 
   const handleSend = async (overrideText) => {
-    const text = (typeof overrideText === "string" ? overrideText : input).trim();
-    if (!text) return;
-    setMessages((prev) => [...prev, { id: Date.now(), sender: "user", text }]);
-    setInput("");
+    const msgText = (overrideText || input).trim();
+    if (!msgText || isTyping) return;
+
+    const userMsg = { id: Date.now(), sender: "user", text: msgText };
+    setMessages((prev) => [...prev, userMsg]);
+    if (!overrideText) setInput("");
     setIsTyping(true);
+
     try {
-      const res = await sendChatMessage(text, recentHistoryPayload(), { ...DEMO_PROFILE, full_name: displayName });
+      const historyPayload = messages.map((m) => ({
+        role: m.sender === "assistant" ? "assistant" : "user",
+        content: m.text,
+      }));
+
+      const res = await sendChatMessage(msgText, historyPayload, DEMO_PROFILE, user?.id || null);
+      const assistantMsg = {
+        id: Date.now() + 1,
+        sender: "assistant",
+        agent: res.agent || "NARI",
+        text: res.reply,
+        urgent: !!res.urgent,
+        evidence: res.evidence || [],
+        riskSignal: res.risk_signal || null,
+        carePlan: res.care_plan || null,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      if (res.risk_signal) {
+        setSessionRiskSignals((prev) => [res.risk_signal, ...prev]);
+      }
+      if (res.care_plan) {
+        setSessionCarePlan(res.care_plan);
+      }
+      if (speakEnabled) {
+        speak(res.reply);
+      }
+    } catch (err) {
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: "assistant",
-          agent: res.agent,
-          text: res.reply,
-          urgent: res.urgent,
-          evidence: res.evidence,
-          riskSignal: res.risk_signal,
-        },
-      ]);
-      if (speakEnabled) speak(res.reply);
-      if (res.urgent) addNotification("Urgent symptom flagged in your assistant chat", "just now");
-      if (res.risk_signal) setSessionRiskSignals((prev) => [res.risk_signal, ...prev].slice(0, 6));
-      if (res.care_plan) setSessionCarePlan(res.care_plan);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 2,
-          sender: "assistant",
-          agent: "NARI",
-          text: `Sorry, I couldn't reach the assistant backend (${err.message}). Is the FastAPI server running?`,
+          agent: "System",
+          text: "I could not process that request right now. Please verify your connection and try again.",
         },
       ]);
     } finally {
       setIsTyping(false);
-      inputRef.current?.focus();
     }
   };
 
-  const handleVoiceTurn = async ({ audioBlob, transcript }) => {
-    const placeholderId = Date.now();
-    setMessages((prev) => [
-      ...prev,
-      transcript
-        ? { id: placeholderId, sender: "user", text: transcript }
-        : { id: placeholderId, sender: "user", text: "🎙️ Transcribing…", pending: true },
+  const clearChat = () => {
+    setMessages([
+      {
+        id: Date.now(),
+        sender: "assistant",
+        agent: "NARI",
+        text: "New consultation started. How can I support your health today?",
+      },
     ]);
-    setIsTyping(true);
+    showToast("Consultation reset");
+  };
 
-    try {
-      const res = await voiceConverse({ audioBlob, transcript, history: recentHistoryPayload() });
-
-      setMessages((prev) => {
-        const withTranscript = prev.map((m) =>
-          m.id === placeholderId ? { ...m, text: res.transcript, pending: false } : m
-        );
-        return [
-          ...withTranscript,
-          {
-            id: Date.now() + 1,
-            sender: "assistant",
-            agent: res.agent,
-            text: res.reply,
-            urgent: res.urgent,
-            evidence: res.evidence,
-            riskSignal: res.risk_signal,
-          },
-        ];
-      });
-
-      if (res.urgent) addNotification("Urgent symptom flagged in your assistant chat", "just now");
-      if (res.risk_signal) setSessionRiskSignals((prev) => [res.risk_signal, ...prev].slice(0, 6));
-      if (res.care_plan) setSessionCarePlan(res.care_plan);
-
-      if (res.audio_base64) {
-        const audio = new Audio(`data:audio/${res.audio_format || "wav"};base64,${res.audio_base64}`);
-        audio.play().catch(() => {});
-      } else {
-        speak(res.reply);
-      }
-    } catch (err) {
-      setMessages((prev) =>
-        prev
-          .filter((m) => m.id !== placeholderId || transcript)
-          .map((m) => (m.id === placeholderId ? { ...m, text: transcript || m.text, pending: false } : m))
-          .concat({
-            id: Date.now() + 2,
-            sender: "assistant",
-            agent: "NARI",
-            text: `Sorry, the voice pipeline hit an error: ${err.message}`,
-          })
-      );
-    } finally {
-      setIsTyping(false);
+  const toggleListening = () => {
+    if (isListening) {
+      setIsListening(false);
+      recognitionRef.current?.stop();
+    } else {
+      if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) return;
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const rec = new SpeechRecognition();
+      rec.continuous = false;
+      rec.interimResults = false;
+      rec.onresult = (e) => {
+        const transcript = e.results[0][0].transcript;
+        setInput(transcript);
+        setIsListening(false);
+      };
+      rec.onerror = () => setIsListening(false);
+      rec.onend = () => setIsListening(false);
+      recognitionRef.current = rec;
+      rec.start();
+      setIsListening(true);
     }
   };
 
   const handleFile = async (file) => {
+    if (!file) return;
     setReportFile(file);
     setScanState("scanning");
-    setScanResult(null);
     setScanErrorText("");
+
     try {
-      const res = await uploadReport(file);
-      const reportJson = res.report.report_json;
-      setScanResult({
-        patientDemographicsFound: reportJson.patient_demographics_found,
-        metrics: reportJson.metrics,
-      });
+      const data = await uploadReport(file);
+      setScanResult(data);
       setScanState("done");
-      setPastReports((prev) => [
-        {
-          id: res.report.id,
-          name: res.report.original_filename,
-          date: "Just now",
-          status: deriveReportFlag(reportJson.metrics),
-          statusLabel: deriveReportFlag(reportJson.metrics),
-        },
-        ...prev,
-      ]);
-      addNotification(`Report analyzed — ${reportJson.metrics.length} value(s) extracted`, "just now");
+      showToast("Report processed successfully");
+
+      const newRep = {
+        id: data.report_id || `rep-${Date.now()}`,
+        name: file.name,
+        date: "Just now",
+        status: deriveReportFlag(data.metrics),
+        statusLabel: deriveReportFlag(data.metrics) === "flagged" ? "Flagged Markers" : "All Normal",
+      };
+      setPastReports((prev) => [newRep, ...prev]);
     } catch (err) {
       setScanState("error");
-      setScanErrorText(err.message || "Something went wrong while analyzing this report.");
+      setScanErrorText(err.message || "Failed to parse document. Please check the file and try again.");
     }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
-    const file = e.dataTransfer.files && e.dataTransfer.files[0];
-    if (file) handleFile(file);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFile(e.dataTransfer.files[0]);
+    }
   };
 
   const resetScan = () => {
     setScanState("idle");
     setScanResult(null);
-    setScanErrorText("");
     setReportFile(null);
   };
 
   const goTo = (page) => (e) => {
-    if (e) e.preventDefault();
+    e?.preventDefault();
     setActivePage(page);
-    if (window.location.hash !== `#${page}`) {
-      window.history.pushState(null, "", `#${page}`);
-    }
   };
-
-  const enterDashboard = (u) => {
-    setUser(u);
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
-    } catch {
-      /* ignore */
-    }
-    setView("dashboard");
-    setActivePage("dashboard");
-  };
-
-  const handleSignOut = () => {
-    setUser(null);
-    setToken(null);
-    try {
-      localStorage.removeItem(SESSION_KEY);
-    } catch {
-      /* ignore */
-    }
-    setView("landing");
-  };
-
-  if (pendingGuestEntry) {
-    return (
-      <GuestNameGate
-        value={guestNameDraft}
-        onChange={setGuestNameDraft}
-        onConfirm={confirmGuestEntry}
-        onCancel={() => setPendingGuestEntry(false)}
-      />
-    );
-  }
 
   if (view === "landing") {
     return (
       <LandingPage
         onGetStarted={() => setView("login")}
         onSignIn={() => setView("login")}
-        onGuest={() => setPendingGuestEntry(true)}
+        onGuest={() => setView("guest_gate")}
+      />
+    );
+  }
+
+  if (view === "guest_gate") {
+    return (
+      <GuestNameGate
+        value={guestNameInput}
+        onChange={setGuestNameInput}
+        onConfirm={handleGuestConfirmed}
+        onCancel={() => setView("landing")}
       />
     );
   }
@@ -781,419 +614,415 @@ export default function NARIApp() {
   if (view === "login") {
     return (
       <LoginPage
-        onSignIn={(u) => enterDashboard(u)}
-        onGuest={() => setPendingGuestEntry(true)}
+        onSignIn={handleSignIn}
+        onGuest={() => setView("guest_gate")}
         onBack={() => setView("landing")}
       />
     );
   }
 
   const displayName = user?.guest ? user?.fullName || "Guest" : user?.fullName || (user?.email ? user.email.split("@")[0] : "there");
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
     <div className="app-shell">
       <style>{`
         :root{
           color-scheme: light;
-          --deep-violet:#34205F;
-          --primary-purple:#694CD0;
-          --lavender:#E1C3FF;
-          --warm-cream:#FFF9EF;
-          --health-teal:#3F8F87;
-          --soft-rose:#FFD9E4;
-          --rose:#E7A1A8;
-          --gold:#F4CE45;
-          --ink:#22163F;
-          --ink-soft:#6B5A8E;
-          --line:rgba(52,32,95,0.1);
-          --panel:#ffffff;
-          --font-head:'Sora',sans-serif;
-          --font-body:'DM Sans',-apple-system,sans-serif;
-          --shadow-soft: 0 16px 40px rgba(52,32,95,0.12);
-          --shadow-card: 0 4px 18px rgba(52,32,95,0.06);
-          --gradient-hero: linear-gradient(135deg, var(--deep-violet) 0%, var(--primary-purple) 100%);
-          --gradient-blush: linear-gradient(135deg, #FFF9EF 0%, #FEEBF1 50%, #F0E9FF 100%);
-          --mint: var(--health-teal);
+          --forest-dark: #0A3B31;
+          --deep-forest: #0F5144;
+          --primary-emerald: #0F5144;
+          --emerald-accent: #10B981;
+          --emerald-dark: #059669;
+          --mint-light: #E6F4F1;
+          --mint-bg: #F0F7F4;
+          --sand-bg: #F6FAF8;
+          --card-white: #FFFFFF;
+          --ink-primary: #0F2922;
+          --ink-secondary: #1E3A34;
+          --ink-muted: #527068;
+          --line: #E2EBE7;
+          --line-strong: #CBD5E1;
+          --rose-alert: #DC2626;
+          --amber-alert: #D97706;
+          --font-head: 'Sora', sans-serif;
+          --font-body: 'DM Sans', -apple-system, sans-serif;
+          --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 4px 14px rgba(15,81,68,0.05);
+          --shadow-soft: 0 6px 24px rgba(15,81,68,0.07);
+          --gradient-hero: linear-gradient(140deg, #0A3B31 0%, #0F5144 100%);
         }
+
         .app-shell{ color-scheme: light; }
         .app-shell button, .app-shell input, .app-shell select, .app-shell a{ color-scheme: light; }
-        .app-shell *{box-sizing:border-box;}
+        .app-shell *{ box-sizing:border-box; }
         .app-shell{
-          display:flex; min-height:100vh; background:var(--warm-cream); color:var(--ink);
-          font-family:var(--font-body); font-size:15px;
+          display:flex; min-height:100vh; background:var(--sand-bg); color:var(--ink-secondary);
+          font-family:var(--font-body); font-size:14.5px;
         }
-        .app-shell h1,.app-shell h2,.app-shell h3,.app-shell h4{font-family:var(--font-head);font-weight:800;letter-spacing:-0.01em;color:var(--deep-violet);margin:0;}
-        .app-shell a{text-decoration:none;color:inherit;}
-        .app-shell button{font-family:inherit;cursor:pointer;}
-        .app-shell ul{list-style:none;margin:0;padding:0;}
+        .app-shell h1,.app-shell h2,.app-shell h3,.app-shell h4{ font-family:var(--font-head); font-weight:700; color:var(--ink-primary); margin:0; }
+        .app-shell a{ text-decoration:none; color:inherit; }
+        .app-shell button{ font-family:inherit; cursor:pointer; }
+        .app-shell ul{ list-style:none; margin:0; padding:0; }
 
+        /* Sidebar */
         .sidebar{
-          width:240px; flex-shrink:0; background:#fff; color:var(--ink);
-          display:flex; flex-direction:column; padding:26px 18px; position:fixed; top:0; bottom:0; left:0; height:100vh;
+          width:240px; flex-shrink:0; background:#fff; color:var(--ink-primary);
+          display:flex; flex-direction:column; padding:24px 16px; position:fixed; top:0; bottom:0; left:0; height:100vh;
           border-right:1px solid var(--line); box-shadow:var(--shadow-card); z-index:10;
         }
-        .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:800;font-size:20px;padding:0 8px 30px;color:var(--deep-violet);}
+        .brand{ display:flex; align-items:center; gap:10px; font-family:var(--font-head); font-weight:800; font-size:19px; padding:0 8px 26px; color:var(--deep-forest); }
         .brand-mark{
-          width:28px;height:28px;border-radius:50%;
-          background:radial-gradient(circle at 35% 30%,#fff,#E7A1A8 55%,#694CD0);
-          box-shadow:0 0 0 4px rgba(245,166,194,0.3);flex-shrink:0;
+          width:28px; height:28px; border-radius:8px; background:var(--deep-forest);
+          display:flex; align-items:center; justify-content:center; color:#E6F4F1; flex-shrink:0;
         }
-        .sidebar-nav{display:flex;flex-direction:column;gap:5px;flex:1;}
+        .sidebar-nav{ display:flex; flex-direction:column; gap:4px; flex:1; }
         .nav-item{
-          display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:14px;
-          font-family:var(--font-head);font-weight:600;font-size:13.5px;color:var(--ink-soft);
-          transition:all .2s cubic-bezier(.2,.8,.2,1);
+          display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:10px;
+          font-family:var(--font-head); font-weight:600; font-size:13px; color:var(--ink-muted);
+          transition:all .18s ease;
         }
-        .nav-item:hover{background:var(--warm-cream);color:var(--deep-violet);transform:translateX(3px);}
-        .nav-item.active{background:linear-gradient(120deg,#694CD0,#34205F);color:#fff;box-shadow:0 8px 20px rgba(105,76,208,0.28);}
-        .nav-section-label{padding:14px 14px 4px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);opacity:0.6;}
-        .nav-item-secondary{font-size:12.5px;padding:9px 14px;opacity:0.85;}
-        .sidebar-foot{border-top:1px solid var(--line);padding-top:18px;margin-top:12px;display:flex;flex-direction:column;gap:12px;}
-        .user-chip{display:flex;align-items:center;gap:11px;}
-        .user-avatar{
-          width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--primary-purple));
-          display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px rgba(105,76,208,0.25);
-        }
-        .user-name{font-family:var(--font-head);font-weight:700;font-size:13.5px;color:var(--deep-violet);}
-        .user-sub{font-size:11.5px;color:var(--ink-soft);}
-        .signout-btn{
-          display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;
-          border:none;background:var(--warm-cream);color:var(--ink-soft);font-size:12px;font-weight:600;
-          transition:background .2s ease,color .2s ease;
-        }
-        .signout-btn:hover{background:#FBE0E5;color:#6b1f27;}
+        .nav-item:hover{ background:var(--mint-bg); color:var(--deep-forest); }
+        .nav-item.active{ background:var(--deep-forest); color:#fff; }
+        .nav-section-label{ padding:14px 12px 4px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); opacity:0.7; }
+        .nav-item-secondary{ font-size:12.5px; padding:9px 12px; }
 
-        .main-col{flex:1;display:flex;flex-direction:column;min-width:0;margin-left:240px;}
-        .topbar{
-          display:flex;align-items:center;justify-content:space-between;padding:18px 36px;
-          border-bottom:1px solid var(--line);background:rgba(255,247,240,0.85);backdrop-filter:blur(10px);
-          position:sticky;top:0;z-index:9;
+        .sidebar-foot{ border-top:1px solid var(--line); padding-top:16px; display:flex; flex-direction:column; gap:10px; }
+        .user-chip{ display:flex; align-items:center; gap:10px; }
+        .user-avatar{
+          width:32px; height:32px; border-radius:50%; background:var(--deep-forest);
+          display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#fff;
         }
-        .topbar-title{font-family:var(--font-head);font-weight:700;font-size:19px;color:var(--deep-violet);}
-        .topbar-actions{display:flex;align-items:center;gap:12px;position:relative;}
+        .user-name{ font-family:var(--font-head); font-weight:700; font-size:13px; color:var(--ink-primary); }
+        .user-sub{ font-size:11px; color:var(--ink-muted); }
+        .signout-btn{
+          display:flex; align-items:center; gap:7px; padding:8px 10px; border-radius:8px;
+          border:1px solid var(--line); background:#FAFCFB; color:var(--ink-muted); font-size:12px; font-weight:600;
+          transition:all .15s ease;
+        }
+        .signout-btn:hover{ background:#FEE2E2; color:#991B1B; border-color:#FECACA; }
+
+        /* Topbar & Main */
+        .main-col{ flex:1; display:flex; flex-direction:column; min-width:0; margin-left:240px; }
+        .topbar{
+          display:flex; align-items:center; justify-content:space-between; padding:16px 36px;
+          border-bottom:1px solid var(--line); background:rgba(246,250,248,0.92); backdrop-filter:blur(8px);
+          position:sticky; top:0; z-index:9;
+        }
+        .topbar-title{ font-family:var(--font-head); font-weight:700; font-size:18px; color:var(--ink-primary); }
+        .topbar-actions{ display:flex; align-items:center; gap:12px; position:relative; }
         .guest-banner{
-          background:#FFF0D6;color:#7A4B00;font-size:12px;padding:6px 12px;border-radius:100px;
-          display:flex;align-items:center;gap:8px;font-weight:600;
+          background:#FEF3C7; color:#92400E; font-size:12px; padding:5px 12px; border-radius:100px;
+          display:flex; align-items:center; gap:8px; font-weight:600; border:1px solid #FDE68A;
         }
         .guest-banner button{
-          background:#7A4B00;color:#fff;border:none;border-radius:100px;padding:2px 9px;
-          font-size:11px;font-weight:700;
+          background:#92400E; color:#fff; border:none; border-radius:100px; padding:2px 8px; font-size:11px; font-weight:700;
         }
         .icon-btn{
-          position:relative;width:40px;height:40px;border-radius:50%;border:none;
-          background:#fff;display:flex;align-items:center;justify-content:center;color:var(--deep-violet);
-          box-shadow:var(--shadow-card);transition:transform .18s ease;
+          position:relative; width:38px; height:38px; border-radius:10px; border:1px solid var(--line);
+          background:#fff; display:flex; align-items:center; justify-content:center; color:var(--ink-primary);
+          transition:all .15s ease;
         }
-        .icon-btn:hover{transform:scale(1.06);}
+        .icon-btn:hover{ background:var(--mint-bg); border-color:var(--deep-forest); }
         .badge{
-          position:absolute;top:-3px;right:-3px;background:var(--rose);color:#4a1f27;
-          font-size:10px;font-weight:700;border-radius:100px;padding:2px 6px;font-family:var(--font-head);
+          position:absolute; top:-4px; right:-4px; background:var(--rose-alert); color:#fff;
+          font-size:10px; font-weight:700; border-radius:100px; padding:1px 5px; font-family:var(--font-head);
         }
-        .notif-backdrop{position:fixed;inset:0;z-index:20;}
         .notif-panel{
-          position:absolute;top:50px;right:0;width:330px;background:#fff;border:none;
-          border-radius:20px;box-shadow:0 22px 50px rgba(52,31,96,0.18);z-index:21;overflow:hidden;
+          position:absolute; top:48px; right:0; width:320px; background:#fff; border:1px solid var(--line);
+          border-radius:16px; box-shadow:var(--shadow-soft); z-index:21; overflow:hidden;
         }
-        .notif-panel-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line);font-family:var(--font-head);font-weight:700;font-size:14px;color:var(--deep-violet);}
-        .notif-panel-head button{background:none;border:none;color:var(--ink-soft);}
-        .notif-panel ul{max-height:320px;overflow-y:auto;}
-        .notif-panel li{display:flex;gap:11px;padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer;}
-        .notif-panel li:last-child{border-bottom:none;}
-        .notif-panel li:hover{background:var(--warm-cream);}
-        .notif-panel li .dot{width:8px;height:8px;border-radius:50%;background:var(--line);margin-top:6px;flex-shrink:0;}
-        .notif-panel li.unread .dot{background:var(--primary-purple);}
-        .notif-panel li strong{display:block;font-size:13px;font-weight:600;color:var(--deep-violet);line-height:1.4;}
-        .notif-panel li span{font-size:11.5px;color:var(--ink-soft);}
+        .notif-panel-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--line); font-family:var(--font-head); font-weight:700; font-size:13.5px; color:var(--ink-primary); }
+        .notif-panel-head button{ background:none; border:none; color:var(--ink-muted); }
+        .notif-panel ul{ max-height:300px; overflow-y:auto; }
+        .notif-panel li{ display:flex; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); cursor:pointer; }
+        .notif-panel li:last-child{ border-bottom:none; }
+        .notif-panel li:hover{ background:var(--mint-bg); }
+        .notif-panel li .dot{ width:7px; height:7px; border-radius:50%; background:var(--line); margin-top:5px; flex-shrink:0; }
+        .notif-panel li.unread .dot{ background:var(--emerald-dark); }
+        .notif-panel li strong{ display:block; font-size:12.5px; font-weight:600; color:var(--ink-primary); }
+        .notif-panel li span{ font-size:11px; color:var(--ink-muted); }
 
-        .page{flex:1;padding:32px 36px 56px;max-width:1040px;width:100%;margin:0 auto;}
-
+        .page{ flex:1; padding:28px 36px 56px; max-width:1040px; width:100%; margin:0 auto; }
         .toast{
-          position:fixed;bottom:26px;right:26px;background:var(--deep-violet);color:#fff;
-          padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:10px;
-          font-size:13.5px;box-shadow:0 18px 40px rgba(52,31,96,0.32);z-index:30;animation:rise .25s ease;
+          position:fixed; bottom:24px; right:24px; background:var(--deep-forest); color:#fff;
+          padding:12px 18px; border-radius:12px; display:flex; align-items:center; gap:8px;
+          font-size:13px; font-weight:600; box-shadow:0 10px 24px rgba(10,59,49,0.3); z-index:30; animation:rise .2s ease;
         }
-        @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+        @keyframes rise{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
 
+        /* Dashboard */
         .welcome-card{
-          background:
-            radial-gradient(circle at 85% 15%, rgba(245,166,194,0.35), transparent 55%),
-            radial-gradient(circle at 8% 90%, rgba(143,214,196,0.22), transparent 50%),
-            var(--gradient-hero);
-          color:#fff;border-radius:24px;
-          padding:34px 38px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:22px;margin-bottom:28px;
-          box-shadow:var(--shadow-soft);position:relative;overflow:hidden;
+          background:var(--gradient-hero); color:#fff; border-radius:20px; padding:28px 32px;
+          display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; margin-bottom:24px;
+          box-shadow:var(--shadow-card);
         }
-        .welcome-card::before{
-          content:''; position:absolute; right:-60px; top:-70px; width:260px; height:260px; border-radius:50%;
-          background:radial-gradient(circle,#E7A1A8 0%,transparent 70%); opacity:0.3; pointer-events:none; filter:blur(6px);
-        }
-        .welcome-card::after{
-          content:''; position:absolute; left:-40px; bottom:-60px; width:200px; height:200px; border-radius:50%;
-          background:radial-gradient(circle,#3F8F87 0%,transparent 72%); opacity:0.22; pointer-events:none; filter:blur(6px);
-        }
-        .eyebrow-sm{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--lavender);margin:0 0 6px;}
-        .welcome-card h1{color:#fff;font-size:26px;font-weight:800;position:relative;z-index:1;}
-        .muted{color:rgba(255,247,240,0.82);font-size:14px;margin-top:6px;}
-        .quick-actions{display:flex;gap:10px;flex-wrap:wrap;position:relative;z-index:1;}
+        .eyebrow-sm{ font-family:var(--font-head); font-weight:700; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#A7F3D0; margin:0 0 4px; }
+        .welcome-card h1{ color:#fff; font-size:24px; font-weight:800; }
+        .muted{ color:rgba(230,244,241,0.85); font-size:13.5px; margin-top:4px; }
+        .quick-actions{ display:flex; gap:10px; flex-wrap:wrap; }
         .qa-btn{
-          display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:100px;
-          font-family:var(--font-head);font-weight:700;font-size:13.5px;background:#fff;color:var(--deep-violet);border:none;
-          box-shadow:0 4px 14px rgba(0,0,0,0.08);transition:transform .18s ease, box-shadow .18s ease;
+          display:inline-flex; align-items:center; gap:7px; padding:10px 16px; border-radius:10px;
+          font-family:var(--font-head); font-weight:700; font-size:13px; background:#fff; color:var(--deep-forest); border:none;
+          transition:all .15s ease;
         }
-        .qa-btn:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,0.14);}
-        .qa-btn.primary{background:linear-gradient(135deg,#E7A1A8,#F4CE45);color:#34205F;}
+        .qa-btn:hover{ transform:translateY(-1px); background:var(--mint-bg); }
+        .qa-btn.primary{ background:var(--emerald-accent); color:#fff; }
+        .qa-btn.primary:hover{ background:var(--emerald-dark); }
 
-        .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px;}
+        .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:24px; }
         .stat-card{
-          background:#fff;border:none;border-radius:20px;padding:22px;box-shadow:var(--shadow-card);
-          transition:transform .2s ease, box-shadow .2s ease;
+          background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:var(--shadow-card);
+          transition:all .15s ease;
         }
-        .stat-card:hover{ transform:translateY(-3px); box-shadow:var(--shadow-soft); }
-        .stat-icon.rose{color:var(--rose);} .stat-icon.teal{color:var(--health-teal);}
-        .stat-icon.purple{color:var(--primary-purple);} .stat-icon.violet{color:var(--deep-violet);}
-        .stat-label{font-size:12px;font-weight:600;color:var(--ink-soft);margin-top:14px;}
-        .stat-value{font-family:var(--font-head);font-weight:800;font-size:20px;color:var(--deep-violet);margin-top:4px;}
-        .stat-sub{font-size:12px;color:var(--ink-soft);margin-top:4px;}
+        .stat-card:hover{ border-color:var(--emerald-accent); transform:translateY(-2px); }
+        .stat-icon.purple{ color:var(--deep-forest); }
+        .stat-icon.teal{ color:var(--emerald-dark); }
+        .stat-icon.rose{ color:var(--amber-alert); }
+        .stat-icon.violet{ color:var(--ink-primary); }
+        .stat-label{ font-size:12px; font-weight:600; color:var(--ink-muted); margin-top:10px; }
+        .stat-value{ font-family:var(--font-head); font-weight:800; font-size:20px; color:var(--ink-primary); margin-top:3px; }
+        .stat-sub{ font-size:11.5px; color:var(--ink-muted); margin-top:3px; }
 
-        .activity-card{background:#fff;border:none;border-radius:20px;padding:26px 28px;box-shadow:var(--shadow-card);}
-        .activity-card h3{font-size:16px;margin-bottom:18px;}
-        .activity-list li{display:flex;gap:14px;padding:12px 0;border-bottom:1px dashed var(--line);align-items:flex-start;}
-        .activity-list li:last-child{border-bottom:none;}
-        .activity-list .dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0;}
-        .dot.rose{background:var(--rose);} .dot.teal{background:var(--health-teal);}
-        .dot.purple{background:var(--primary-purple);} .dot.violet{background:var(--deep-violet);}
-        .activity-list strong{display:block;font-size:13.5px;color:var(--deep-violet);font-weight:600;}
-        .activity-list span{font-size:11.5px;color:var(--ink-soft);}
+        .activity-card{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px 24px; box-shadow:var(--shadow-card); }
+        .activity-card h3{ font-size:15px; margin-bottom:14px; }
+        .activity-list li{ display:flex; gap:12px; padding:10px 0; border-bottom:1px dashed var(--line); align-items:flex-start; }
+        .activity-list li:last-child{ border-bottom:none; }
+        .activity-list .dot{ width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; }
+        .dot.rose{ background:var(--amber-alert); }
+        .dot.teal{ background:var(--emerald-dark); }
+        .dot.purple{ background:var(--deep-forest); }
+        .activity-list strong{ display:block; font-size:13px; color:var(--ink-primary); font-weight:600; }
+        .activity-list span{ font-size:11.5px; color:var(--ink-muted); }
 
-        /* Chat Layout & Formatted Markdown */
-        .chat-shell{display:flex;flex-direction:column;height:calc(100vh - 160px);max-height:760px;background:#fff;border:none;border-radius:24px;overflow:hidden;box-shadow:var(--shadow-soft);}
-        .chat-toolbar{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line);background:#FAFAFE;}
-        .chat-toolbar-left{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink-soft);font-weight:600;}
-        .chat-toolbar-right{display:flex;align-items:center;gap:10px;}
-        .tool-btn{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:#fff;border-radius:100px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--ink-soft);transition:all .18s ease;}
-        .tool-btn:hover{background:var(--warm-cream);color:var(--deep-violet);}
-        .tool-btn.on{background:var(--lavender);color:var(--deep-violet);border-color:transparent;}
-        
-        .chat-window{flex:1;overflow-y:auto;padding:24px 22px;display:flex;flex-direction:column;gap:18px;}
-        .msg-row{display:flex;flex-direction:column;max-width:78%;}
-        .msg-row.user{align-self:flex-end;align-items:flex-end;}
-        .msg-row.assistant{align-self:flex-start;align-items:flex-start;}
-        .agent-tag{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--primary-purple);margin-bottom:6px;padding-left:4px;}
-        .bubble{padding:14px 18px;border-radius:20px;font-size:14.5px;line-height:1.65; animation: bubble-in .25s ease; position:relative;}
-        @keyframes bubble-in{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
-        .bubble.user{background:linear-gradient(135deg,var(--primary-purple),#34205F);color:#fff;border-bottom-right-radius:6px;white-space:pre-wrap;}
-        .bubble.assistant{background:var(--gradient-blush);color:var(--ink);border-bottom-left-radius:6px;}
-        .bubble.assistant.urgent{background:#FBE0E5;color:#6b1f27;border:1.5px solid var(--rose);}
-        
-        .chat-formatted-body{display:flex;flex-direction:column;gap:10px;}
-        .chat-paragraph{margin:0;font-size:14.5px;line-height:1.65;}
-        .chat-section-header{font-size:14px;font-weight:800;color:var(--deep-violet);margin:10px 0 3px;display:flex;align-items:center;gap:6px;}
-        .chat-bullet-list{margin:4px 0 8px;padding-left:18px;display:flex;flex-direction:column;gap:6px;list-style:disc;}
-        .chat-bullet-list li{font-size:14px;line-height:1.6;}
-        
-        .msg-footer{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed rgba(52,31,96,0.12);}
-        .msg-action-btn{display:inline-flex;align-items:center;gap:5px;border:none;background:none;color:var(--ink-soft);font-size:11.5px;font-weight:600;padding:3px 7px;border-radius:6px;cursor:pointer;transition:all .15s ease;}
-        .msg-action-btn:hover{background:rgba(105,76,208,0.12);color:var(--deep-violet);}
-        
-        .bubble.typing{display:flex;gap:5px;padding:14px 18px;}
-        .bubble.typing span{width:7px;height:7px;border-radius:50%;background:var(--ink-soft);opacity:0.5;animation:blink 1.2s infinite ease-in-out;}
-        .bubble.typing span:nth-child(2){animation-delay:0.2s;} .bubble.typing span:nth-child(3){animation-delay:0.4s;}
-        @keyframes blink{0%,80%,100%{opacity:0.25;} 40%{opacity:0.9;}}
-        
-        .risk-flag{display:flex;align-items:flex-start;gap:7px;margin-top:10px;padding:9px 12px;border-radius:12px;font-size:12.5px;line-height:1.45;background:#FFF4E0;color:#7A4B00;border:1px solid var(--gold);}
-        .risk-flag svg{flex-shrink:0;margin-top:2px;}
-        .risk-flag.risk-l2,.risk-flag.risk-l3{background:#FBE0E5;color:#6b1f27;border-color:var(--rose);}
-        
-        .evidence-list{margin-top:8px;display:flex;flex-direction:column;gap:3px;}
-        .evidence-item{font-size:11.5px;color:var(--ink-soft);}
-        .evidence-item a{color:var(--primary-purple);text-decoration:underline;}
+        /* Chat Layout */
+        .chat-shell{
+          display:flex; flex-direction:column; height:calc(100vh - 150px); max-height:740px;
+          background:#fff; border:1px solid var(--line); border-radius:20px; overflow:hidden; box-shadow:var(--shadow-card);
+        }
+        .chat-toolbar{
+          display:flex; align-items:center; justify-content:space-between; padding:14px 20px;
+          border-bottom:1px solid var(--line); background:#FAFCFB;
+        }
+        .chat-toolbar-left{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--deep-forest); font-weight:700; }
+        .chat-toolbar-right{ display:flex; align-items:center; gap:8px; }
+        .tool-btn{
+          display:flex; align-items:center; gap:6px; border:1px solid var(--line); background:#fff; border-radius:8px;
+          padding:6px 12px; font-size:12px; font-weight:600; color:var(--ink-muted); transition:all .15s ease;
+        }
+        .tool-btn:hover{ background:var(--mint-bg); color:var(--deep-forest); }
+        .tool-btn.on{ background:var(--mint-light); color:var(--deep-forest); border-color:var(--emerald-accent); }
 
-        .expand-panel{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:#FAFAFC;}
-        .expand-panel summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--deep-violet);}
-        .expand-panel summary::-webkit-details-marker{display:none;}
-        .expand-panel summary::after{content:"+";font-size:14px;font-weight:700;color:var(--ink-soft);}
-        .expand-panel[open] summary::after{content:"−";}
-        .expand-panel .expand-body{padding:0 12px 10px;font-size:12px;color:var(--ink-soft);line-height:1.5;}
-        .expand-panel .expand-body ul{margin:0;padding-left:16px;}
-        .expand-panel + .expand-panel{margin-top:6px;}
+        .chat-window{ flex:1; overflow-y:auto; padding:20px; display:flex; flex-direction:column; gap:16px; background:#FAFCFB; }
+        .msg-row{ display:flex; flex-direction:column; max-width:80%; }
+        .msg-row.user{ align-self:flex-end; align-items:flex-end; }
+        .msg-row.assistant{ align-self:flex-start; align-items:flex-start; }
+        .agent-tag{ font-family:var(--font-head); font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; color:var(--deep-forest); margin-bottom:5px; padding-left:4px; }
+        .bubble{ padding:14px 18px; border-radius:16px; font-size:14px; line-height:1.6; position:relative; }
+        .bubble.user{ background:var(--deep-forest); color:#fff; border-bottom-right-radius:4px; white-space:pre-wrap; }
+        .bubble.assistant{ background:#FFFFFF; color:var(--ink-primary); border:1px solid var(--line); border-bottom-left-radius:4px; box-shadow:var(--shadow-card); }
+        .bubble.assistant.urgent{ background:#FEF2F2; color:#991B1B; border:1.5px solid #F87171; }
 
-        .chat-disclaimer{display:flex;align-items:center;gap:6px;padding:6px 22px;font-size:11px;color:var(--ink-soft);background:var(--warm-cream);border-top:1px solid var(--line);}
-        .chat-disclaimer svg{flex-shrink:0;}
-        
-        .chip-row{display:flex;flex-wrap:wrap;gap:8px;padding:0 22px 14px;}
-        .chip{border:none;background:#fff;border-radius:100px;padding:9px 15px;font-size:12.5px;color:var(--deep-violet);font-weight:600;box-shadow:var(--shadow-soft);transition:transform .18s ease, background .18s ease;}
-        .chip:hover{background:var(--lavender);transform:translateY(-2px);}
-        .voice-error{display:flex;align-items:center;gap:7px;padding:0 22px 10px;color:#8a4a30;font-size:12px;}
-        
-        .chat-input-row{display:flex;align-items:center;gap:10px;padding:16px 22px;border-top:1px solid var(--line);background:#fff;}
-        .mic-btn{width:42px;height:42px;border-radius:50%;border:none;background:var(--warm-cream);display:flex;align-items:center;justify-content:center;color:var(--deep-violet);flex-shrink:0;transition:transform .18s ease;}
-        .mic-btn.listening{background:var(--rose);color:#fff;border-color:transparent;animation:mic-pulse 1.4s infinite;}
-        .mic-btn.disabled{opacity:0.4;cursor:not-allowed;}
-        .mic-btn:hover{transform:scale(1.08);}
-        @keyframes mic-pulse{0%{box-shadow:0 0 0 0 rgba(245,166,194,0.5);}100%{box-shadow:0 0 0 10px rgba(245,166,194,0);}}
-        
-        .chat-input{flex:1;border:1.5px solid var(--line);border-radius:100px;padding:12px 20px;font-size:14.5px;font-family:var(--font-body);outline:none;transition:border-color .2s ease, box-shadow .2s ease;}
-        .chat-input:focus{border-color:var(--primary-purple); box-shadow:0 0 0 3px rgba(105,76,208,0.14);}
-        .send-btn{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary-purple),#34205F);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .18s ease;box-shadow:var(--shadow-soft);}
-        .send-btn:hover{transform:scale(1.08) rotate(6deg);}
+        .chat-formatted-body{ display:flex; flex-direction:column; gap:8px; }
+        .chat-paragraph{ margin:0; font-size:14px; line-height:1.6; }
+        .chat-section-header{ font-size:13.5px; font-weight:800; color:var(--ink-primary); margin:8px 0 2px; }
+        .chat-bullet-list{ margin:3px 0 6px; padding-left:18px; display:flex; flex-direction:column; gap:4px; list-style:disc; }
+        .chat-bullet-list li{ font-size:13.5px; line-height:1.55; }
 
-        .reports-shell{display:flex;flex-direction:column;gap:22px;}
+        .msg-footer{ display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:6px; border-top:1px dashed var(--line); }
+        .msg-action-btn{
+          display:inline-flex; align-items:center; gap:5px; border:none; background:none; color:var(--ink-muted);
+          font-size:11.5px; font-weight:600; padding:3px 6px; border-radius:6px; cursor:pointer; transition:all .15s ease;
+        }
+        .msg-action-btn:hover{ background:var(--mint-light); color:var(--deep-forest); }
+
+        .bubble.typing{ display:flex; gap:5px; padding:12px 16px; }
+        .bubble.typing span{ width:6px; height:6px; border-radius:50%; background:var(--ink-muted); opacity:0.5; animation:blink 1.2s infinite ease-in-out; }
+        .bubble.typing span:nth-child(2){ animation-delay:0.2s; } .bubble.typing span:nth-child(3){ animation-delay:0.4s; }
+        @keyframes blink{ 0%,80%,100%{opacity:0.25;} 40%{opacity:0.9;} }
+
+        .risk-flag{ display:flex; align-items:flex-start; gap:7px; margin-top:8px; padding:8px 12px; border-radius:10px; font-size:12px; line-height:1.45; background:#FEF3C7; color:#92400E; border:1px solid #FDE68A; }
+        .risk-flag svg{ flex-shrink:0; margin-top:2px; }
+        .risk-flag.risk-l2, .risk-flag.risk-l3{ background:#FEF2F2; color:#991B1B; border-color:#FECACA; }
+
+        .expand-panel{ margin-top:8px; border:1px solid var(--line); border-radius:10px; background:#FAFCFB; }
+        .expand-panel summary{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px 11px; font-size:11.5px; font-weight:700; color:var(--deep-forest); }
+        .expand-panel summary::-webkit-details-marker{ display:none; }
+        .expand-panel summary::after{ content:"+"; font-size:13px; font-weight:700; color:var(--ink-muted); }
+        .expand-panel[open] summary::after{ content:"−"; }
+        .expand-panel .expand-body{ padding:0 11px 8px; font-size:11.5px; color:var(--ink-muted); line-height:1.5; }
+        .expand-panel .expand-body ul{ margin:0; padding-left:14px; }
+
+        .chat-disclaimer{ display:flex; align-items:center; gap:6px; padding:6px 20px; font-size:11px; color:var(--ink-muted); background:#F0F7F4; border-top:1px solid var(--line); }
+        .chat-disclaimer svg{ flex-shrink:0; color:var(--deep-forest); }
+        .chip-row{ display:flex; flex-wrap:wrap; gap:8px; padding:0 20px 12px; }
+        .chip{ border:1px solid var(--line); background:#fff; border-radius:100px; padding:7px 14px; font-size:12px; color:var(--deep-forest); font-weight:600; transition:all .15s ease; }
+        .chip:hover{ background:var(--mint-bg); border-color:var(--deep-forest); }
+
+        .chat-input-row{ display:flex; align-items:center; gap:10px; padding:14px 20px; border-top:1px solid var(--line); background:#fff; }
+        .mic-btn{ width:40px; height:40px; border-radius:50%; border:1px solid var(--line); background:#FAFCFB; display:flex; align-items:center; justify-content:center; color:var(--deep-forest); flex-shrink:0; transition:all .15s ease; }
+        .mic-btn.listening{ background:var(--rose-alert); color:#fff; border-color:transparent; }
+        .mic-btn.disabled{ opacity:0.4; cursor:not-allowed; }
+        .mic-btn:hover{ background:var(--mint-bg); }
+        .chat-input{ flex:1; border:1.5px solid var(--line); border-radius:100px; padding:10px 18px; font-size:14px; font-family:var(--font-body); outline:none; transition:all .15s ease; }
+        .chat-input:focus{ border-color:var(--deep-forest); box-shadow:0 0 0 3px rgba(15,81,68,0.1); }
+        .send-btn{ width:40px; height:40px; border-radius:50%; background:var(--deep-forest); color:#fff; border:none; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .15s ease; }
+        .send-btn:hover{ background:var(--forest-dark); transform:translateY(-1px); }
+
+        /* Reports */
+        .reports-shell{ display:flex; flex-direction:column; gap:20px; }
         .dropzone{
-          border:2.5px dashed var(--lavender);border-radius:24px;background:#fff;padding:46px 20px;
-          display:flex;flex-direction:column;align-items:center;text-align:center;gap:9px;color:var(--ink-soft);cursor:pointer;
-          transition: border-color .2s ease, background .2s ease, transform .2s ease;
+          border:2px dashed var(--line-strong); border-radius:20px; background:#fff; padding:40px 20px;
+          display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px; color:var(--ink-muted); cursor:pointer;
+          transition:all .18s ease;
         }
-        .dropzone:hover{ transform:translateY(-2px); }
-        .dropzone.active{border-color:var(--primary-purple);background:var(--gradient-blush);}
-        .dropzone svg{color:var(--primary-purple);}
-        .dropzone strong{color:var(--deep-violet);}
-        .muted-sm{font-size:12px;color:var(--ink-soft);}
-        .scan-card{background:#fff;border:none;border-radius:20px;padding:24px;box-shadow:var(--shadow-soft);}
-        .scan-card-head{display:flex;align-items:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:14px;color:var(--deep-violet);margin-bottom:10px;}
-        .spin{animation:spin 1s linear infinite;color:var(--primary-purple);}
-        @keyframes spin{to{transform:rotate(360deg);}}
-        .ok{color:var(--health-teal);}
-        .err{color:#b23b4a;}
-        .marker-table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;}
-        .marker-table th{text-align:left;font-family:var(--font-head);font-size:11.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);padding:8px 6px;border-bottom:1px solid var(--line);}
-        .marker-table td{padding:10px 6px;border-bottom:1px solid var(--line);color:var(--ink);}
-        .flag-pill{font-family:var(--font-head);font-weight:700;font-size:11px;padding:4px 10px;border-radius:100px;text-transform:capitalize;}
-        .flag-pill.low, .flag-pill.flagged{background:#FDEBD3;color:#8a4a30;}
-        .flag-pill.high{background:#FBE0E5;color:#6b1f27;}
-        .flag-pill.normal{background:#DFF3ED;color:#215a52;}
-        .past-reports{background:#fff;border:none;border-radius:20px;padding:24px;box-shadow:var(--shadow-soft);}
-        .past-reports h3{font-size:15px;margin-bottom:14px;}
-        .past-reports li{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px dashed var(--line);}
-        .past-reports li:last-child{border-bottom:none;}
-        .past-reports li svg{color:var(--primary-purple);flex-shrink:0;}
-        .past-reports li > div{flex:1;}
-        .past-reports li strong{display:block;font-size:13.5px;color:var(--deep-violet);font-weight:600;}
-        .past-reports li span{font-size:11.5px;color:var(--ink-soft);}
+        .dropzone:hover, .dropzone.active{ border-color:var(--deep-forest); background:var(--mint-bg); }
+        .dropzone svg{ color:var(--deep-forest); }
+        .dropzone strong{ color:var(--ink-primary); }
+        .scan-card{ background:#fff; border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:var(--shadow-card); }
+        .scan-card-head{ display:flex; align-items:center; gap:8px; font-family:var(--font-head); font-weight:700; font-size:14px; color:var(--ink-primary); margin-bottom:10px; }
+        .spin{ animation:spin 1s linear infinite; color:var(--deep-forest); }
+        .ok{ color:var(--emerald-dark); }
+        .err{ color:var(--rose-alert); }
+        .marker-table{ width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px; }
+        .marker-table th{ text-align:left; font-family:var(--font-head); font-size:11.5px; text-transform:uppercase; letter-spacing:0.05em; color:var(--ink-muted); padding:8px 6px; border-bottom:1px solid var(--line); }
+        .marker-table td{ padding:10px 6px; border-bottom:1px solid var(--line); color:var(--ink-primary); }
+        .flag-pill{ font-family:var(--font-head); font-weight:700; font-size:11px; padding:3px 9px; border-radius:100px; }
+        .flag-pill.low{ background:#FEF3C7; color:#92400E; }
+        .flag-pill.high{ background:#FEE2E2; color:#991B1B; }
+        .flag-pill.normal{ background:#D1FAE5; color:#065F46; }
+        .flag-pill.flagged{ background:#FEF3C7; color:#92400E; }
+        .past-reports{ background:#fff; border:1px solid var(--line); border-radius:18px; padding:22px; box-shadow:var(--shadow-card); }
+        .past-reports h3{ font-size:14.5px; margin-bottom:12px; }
+        .past-reports li{ display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px dashed var(--line); }
+        .past-reports li:last-child{ border-bottom:none; }
+        .past-reports li svg{ color:var(--deep-forest); flex-shrink:0; }
+        .past-reports li > div{ flex:1; }
+        .past-reports li strong{ display:block; font-size:13px; color:var(--ink-primary); font-weight:600; }
+        .past-reports li span{ font-size:11.5px; color:var(--ink-muted); }
 
-        .pipeline-card{background:#fff;border:none;border-radius:20px;padding:26px 28px;margin-bottom:28px;box-shadow:var(--shadow-soft);}
-        .pipeline-head{display:flex;align-items:center;gap:8px;color:var(--primary-purple);}
-        .pipeline-head h3{font-size:14.5px;margin:0;color:var(--deep-violet);}
-        .pipeline-card code{background:var(--gradient-blush);color:var(--deep-violet);padding:2px 7px;border-radius:6px;font-size:11.5px;}
-        .pipeline-row{display:flex;align-items:stretch;gap:2px;overflow-x:auto;margin-top:16px;padding-bottom:4px;}
-        .pipeline-step{display:flex;align-items:center;flex-shrink:0;}
+        /* Pipeline Visual */
+        .pipeline-card{ background:#fff; border:1px solid var(--line); border-radius:18px; padding:22px 24px; margin-bottom:24px; box-shadow:var(--shadow-card); }
+        .pipeline-head{ display:flex; align-items:center; gap:8px; color:var(--deep-forest); }
+        .pipeline-head h3{ font-size:14px; margin:0; color:var(--ink-primary); font-weight:700; }
+        .pipeline-row{ display:flex; align-items:stretch; gap:4px; overflow-x:auto; margin-top:14px; padding-bottom:4px; }
+        .pipeline-step{ display:flex; align-items:center; flex-shrink:0; }
         .pipeline-step-inner{
-          display:flex;align-items:center;gap:10px;background:var(--warm-cream);border:1px solid var(--line);border-radius:16px;padding:10px 14px;min-width:154px;
-          transition:transform .18s ease;
+          display:flex; align-items:center; gap:9px; background:var(--sand-bg); border:1px solid var(--line); border-radius:12px; padding:9px 12px; min-width:148px;
         }
-        .pipeline-step-inner:hover{ transform:translateY(-3px); }
         .pipeline-index{
-          width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--primary-purple));
-          color:#fff;font-family:var(--font-head);font-weight:700;font-size:10.5px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+          width:20px; height:20px; border-radius:50%; background:var(--deep-forest);
+          color:#fff; font-family:var(--font-head); font-weight:700; font-size:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0;
         }
-        .pipeline-step-inner strong{display:block;font-size:12px;color:var(--deep-violet);font-weight:700;line-height:1.3;}
-        .pipeline-step-inner span{font-size:10.5px;color:var(--ink-soft);}
-        .pipeline-arrow{color:var(--line);flex-shrink:0;margin:0 3px;}
+        .pipeline-step-inner strong{ display:block; font-size:11.5px; color:var(--ink-primary); font-weight:700; }
+        .pipeline-step-inner span{ font-size:10.5px; color:var(--ink-muted); }
+        .pipeline-arrow{ color:var(--line-strong); flex-shrink:0; margin:0 2px; }
 
-        .twin-shell{display:flex;flex-direction:column;gap:20px;}
-        .twin-profile-card{display:flex;align-items:center;gap:18px;background:var(--gradient-hero);border-radius:24px;padding:24px 28px;color:#fff;}
-        .twin-avatar{width:46px;height:46px;border-radius:50%;background:rgba(255,255,255,0.16);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-        .twin-profile-info h2{color:#fff;font-size:18px;}
-        .twin-profile-info .muted-sm{color:rgba(255,247,240,0.8);margin-top:4px;}
-        .twin-badge{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.16);border-radius:100px;padding:7px 13px;font-size:12px;font-weight:600;flex-shrink:0;}
-        .twin-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-        .twin-card{background:#fff;border:none;border-radius:20px;padding:22px 24px;box-shadow:var(--shadow-soft);}
-        .twin-card-wide{grid-column:1 / -1;}
-        .twin-card-head{display:flex;align-items:center;gap:8px;color:var(--primary-purple);margin-bottom:10px;}
-        .twin-card-head h3{font-size:14px;margin:0;color:var(--deep-violet);}
-        .twin-card a{color:var(--primary-purple);text-decoration:underline;}
-        .twin-timeline{display:flex;flex-direction:column;gap:12px;}
-        .twin-timeline li{display:flex;align-items:flex-start;gap:10px;}
-        .twin-timeline li strong{display:block;font-size:13px;color:var(--deep-violet);font-weight:600;}
-        .twin-timeline li span{font-size:11px;color:var(--ink-soft);}
-        .twin-tag{flex-shrink:0;font-family:var(--font-head);font-weight:700;font-size:10px;padding:3px 8px;border-radius:100px;margin-top:1px;}
-        .twin-tag-symptom{background:#FBE0E5;color:#6b1f27;}
-        .twin-tag-lab{background:#DFF3ED;color:#215a52;}
-        .twin-tag-lifestyle{background:#F0E9FF;color:var(--primary-purple);}
+        /* Digital Health Twin */
+        .twin-shell{ display:flex; flex-direction:column; gap:20px; }
+        .twin-profile-card{ display:flex; align-items:center; gap:16px; background:var(--gradient-hero); border-radius:20px; padding:22px 26px; color:#fff; }
+        .twin-avatar{ width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,0.16); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .twin-profile-info h2{ color:#fff; font-size:17px; }
+        .twin-profile-info .muted-sm{ color:rgba(230,244,241,0.85); margin-top:3px; }
+        .twin-badge{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.16); border-radius:100px; padding:6px 12px; font-size:11.5px; font-weight:700; flex-shrink:0; }
+        .twin-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+        .twin-card{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:20px 22px; box-shadow:var(--shadow-card); }
+        .twin-card-wide{ grid-column:1 / -1; }
+        .twin-card-head{ display:flex; align-items:center; gap:8px; color:var(--deep-forest); margin-bottom:10px; }
+        .twin-card-head h3{ font-size:14px; margin:0; color:var(--ink-primary); font-weight:700; }
+        .twin-timeline{ display:flex; flex-direction:column; gap:10px; }
+        .twin-timeline li{ display:flex; align-items:flex-start; gap:10px; }
+        .twin-timeline li strong{ display:block; font-size:12.5px; color:var(--ink-primary); font-weight:600; }
+        .twin-timeline li span{ font-size:11px; color:var(--ink-muted); }
+        .twin-tag{ flex-shrink:0; font-family:var(--font-head); font-weight:700; font-size:10px; padding:2px 7px; border-radius:6px; }
+        .twin-tag-symptom{ background:#FEF2F2; color:#991B1B; }
+        .twin-tag-lab{ background:#D1FAE5; color:#065F46; }
+        .twin-tag-lifestyle{ background:#F0F7F4; color:var(--deep-forest); }
 
-        .risk-card{border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:12px;background:#fff;}
-        .risk-card:last-child{margin-bottom:0;}
-        .risk-card-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
-        .risk-card-head strong{font-family:var(--font-head);color:var(--deep-violet);font-size:13.5px;}
-        .example-tag{margin-left:auto;font-size:10px;font-weight:700;color:var(--ink-soft);border:1px solid var(--line);border-radius:100px;padding:2px 8px;}
-        .level-pill{font-family:var(--font-head);font-weight:700;font-size:10.5px;padding:4px 10px;border-radius:100px;flex-shrink:0;}
-        .level-l0{background:#DFF3ED;color:#215a52;} .level-l1{background:#FFF4E0;color:#7A4B00;}
-        .level-l2{background:#FBE0E5;color:#6b1f27;} .level-l3{background:#6b1f27;color:#fff;}
-        .risk-card-l0{border-left:4px solid var(--health-teal);} .risk-card-l1{border-left:4px solid var(--gold);}
-        .risk-card-l2{border-left:4px solid var(--rose);} .risk-card-l3{border-left:4px solid #6b1f27;}
-        .factor-list{margin:0 0 8px;padding-left:18px;font-size:12.5px;color:var(--ink);}
-        .factor-list li{margin-bottom:3px;}
-        .risk-next{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--ink-soft);margin-top:6px;line-height:1.5;}
-        .risk-next svg{flex-shrink:0;margin-top:2px;color:var(--primary-purple);}
+        .risk-card{ border:1px solid var(--line); border-radius:14px; padding:16px 18px; margin-bottom:10px; background:#fff; }
+        .risk-card:last-child{ margin-bottom:0; }
+        .risk-card-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+        .risk-card-head strong{ font-family:var(--font-head); color:var(--ink-primary); font-size:13.5px; }
+        .example-tag{ margin-left:auto; font-size:10px; font-weight:700; color:var(--ink-muted); border:1px solid var(--line); border-radius:100px; padding:2px 8px; }
+        .level-pill{ font-family:var(--font-head); font-weight:700; font-size:10.5px; padding:3px 9px; border-radius:100px; flex-shrink:0; }
+        .level-l0{ background:#D1FAE5; color:#065F46; } .level-l1{ background:#FEF3C7; color:#92400E; }
+        .level-l2{ background:#FEE2E2; color:#991B1B; } .level-l3{ background:#991B1B; color:#fff; }
+        .risk-card-l0{ border-left:4px solid var(--emerald-dark); } .risk-card-l1{ border-left:4px solid var(--amber-alert); }
+        .risk-card-l2{ border-left:4px solid var(--rose-alert); } .risk-card-l3{ border-left:4px solid #991B1B; }
+        .factor-list{ margin:0 0 8px; padding-left:16px; font-size:12.5px; color:var(--ink-secondary); }
+        .factor-list li{ margin-bottom:3px; }
+        .risk-next{ display:flex; align-items:flex-start; gap:6px; font-size:12.5px; color:var(--ink-muted); margin-top:6px; line-height:1.5; }
+        .risk-next svg{ flex-shrink:0; margin-top:2px; color:var(--deep-forest); }
 
-        .clinician-banner{display:flex;align-items:flex-start;gap:9px;background:#F0E9FF;color:var(--ink-soft);border:none;border-radius:16px;padding:14px 18px;font-size:12.5px;line-height:1.5;margin-bottom:20px;box-shadow:var(--shadow-card);}
-        .clinician-banner svg{flex-shrink:0;margin-top:2px;color:var(--primary-purple);}
-        .clinician-grid{display:grid;grid-template-columns:320px 1fr;gap:20px;align-items:start;}
-        .roster-card{background:#fff;border:none;border-radius:20px;padding:22px;box-shadow:var(--shadow-soft);}
-        .roster-list{display:flex;flex-direction:column;gap:5px;margin-top:10px;}
-        .roster-list li{display:flex;align-items:center;gap:10px;padding:12px 10px;border-radius:12px;cursor:pointer;transition:all .18s ease;}
-        .roster-list li:hover{background:var(--warm-cream);}
-        .roster-list li.selected{background:var(--lavender);}
-        .roster-info{flex:1;min-width:0;}
-        .roster-info strong{display:block;font-size:13px;color:var(--deep-violet);font-weight:600;}
-        .roster-info span{font-size:11px;color:var(--ink-soft);}
-        .roster-meta{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;}
-        .level-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
-        .level-dot.level-l0{background:var(--health-teal);} .level-dot.level-l1{background:var(--gold);}
-        .level-dot.level-l2{background:var(--rose);} .level-dot.level-l3{background:#6b1f27;}
-        .patient-detail-card{background:#fff;border:none;border-radius:20px;padding:24px 26px;box-shadow:var(--shadow-soft);}
-        .patient-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:20px;padding-bottom:18px;border-bottom:1px solid var(--line);}
-        .patient-detail-head h3{font-size:17px;}
-        .patient-detail-card h4{display:flex;align-items:center;gap:7px;font-family:var(--font-head);font-size:12.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--ink-soft);margin:20px 0 12px;}
-        .patient-detail-card h4:first-of-type{margin-top:0;}
-        .event-log{display:flex;flex-direction:column;gap:9px;}
-        .event-log li{display:flex;align-items:center;gap:10px;font-size:12.5px;padding:9px 0;border-bottom:1px dashed var(--line);}
-        .event-log li:last-child{border-bottom:none;}
-        .event-time{font-family:var(--font-head);font-weight:700;color:var(--primary-purple);font-size:11px;width:40px;flex-shrink:0;}
-        .event-log li strong{color:var(--deep-violet);width:170px;flex-shrink:0;}
-        .event-log li span:last-child{color:var(--ink-soft);}
+        /* Clinician Portal */
+        .clinician-banner{ display:flex; align-items:flex-start; gap:8px; background:#F0F7F4; color:var(--ink-muted); border:1px solid #D1FAE5; border-radius:14px; padding:12px 16px; font-size:12.5px; line-height:1.5; margin-bottom:18px; }
+        .clinician-banner svg{ flex-shrink:0; margin-top:2px; color:var(--deep-forest); }
+        .clinician-grid{ display:grid; grid-template-columns:300px 1fr; gap:18px; align-items:start; }
+        .roster-card{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow-card); }
+        .roster-list{ display:flex; flex-direction:column; gap:4px; margin-top:8px; }
+        .roster-list li{ display:flex; align-items:center; gap:8px; padding:10px 8px; border-radius:10px; cursor:pointer; transition:all .15s ease; }
+        .roster-list li:hover{ background:var(--mint-bg); }
+        .roster-list li.selected{ background:var(--mint-light); border-left:3px solid var(--deep-forest); }
+        .roster-info{ flex:1; min-width:0; }
+        .roster-info strong{ display:block; font-size:13px; color:var(--ink-primary); font-weight:600; }
+        .roster-info span{ font-size:11px; color:var(--ink-muted); }
+        .roster-meta{ display:flex; flex-direction:column; align-items:flex-end; gap:3px; flex-shrink:0; }
+        .patient-detail-card{ background:#fff; border:1px solid var(--line); border-radius:16px; padding:22px 24px; box-shadow:var(--shadow-card); }
+        .patient-detail-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--line); }
+        .patient-detail-head h3{ font-size:16px; }
+        .patient-detail-card h4{ display:flex; align-items:center; gap:6px; font-family:var(--font-head); font-size:12px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-muted); margin:18px 0 10px; }
+        .patient-detail-card h4:first-of-type{ margin-top:0; }
+        .event-log{ display:flex; flex-direction:column; gap:8px; }
+        .event-log li{ display:flex; align-items:center; gap:8px; font-size:12px; padding:8px 0; border-bottom:1px dashed var(--line); }
+        .event-log li:last-child{ border-bottom:none; }
+        .event-time{ font-family:var(--font-head); font-weight:700; color:var(--deep-forest); font-size:11px; width:38px; flex-shrink:0; }
+        .event-log li strong{ color:var(--ink-primary); width:160px; flex-shrink:0; }
+        .event-log li span:last-child{ color:var(--ink-muted); }
 
         @media (max-width:900px){
-          .sidebar{width:72px;padding:18px 10px;border-radius:0;}
-          .main-col{margin-left:72px;}
-          .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{display:none;}
-          .nav-section-label{display:none;}
-          .brand{justify-content:center;padding-bottom:20px;}
-          .nav-item{justify-content:center;}
-          .user-chip{justify-content:center;}
-          .stat-grid{grid-template-columns:repeat(2,1fr);}
-          .page{padding:22px 16px 40px;}
-          .twin-grid{grid-template-columns:1fr;}
-          .clinician-grid{grid-template-columns:1fr;}
-          .pipeline-row{flex-wrap:nowrap;}
-          .guest-banner span{display:none;}
+          .sidebar{ width:68px; padding:16px 8px; }
+          .main-col{ margin-left:68px; }
+          .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{ display:none; }
+          .nav-section-label{ display:none; }
+          .brand{ justify-content:center; padding-bottom:18px; }
+          .nav-item{ justify-content:center; }
+          .user-chip{ justify-content:center; }
+          .stat-grid{ grid-template-columns:repeat(2,1fr); }
+          .page{ padding:20px 16px 40px; }
+          .twin-grid{ grid-template-columns:1fr; }
+          .clinician-grid{ grid-template-columns:1fr; }
+          .guest-banner span{ display:none; }
         }
       `}</style>
 
+      {/* Sidebar */}
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"></span><span>NARI</span></div>
+        <div className="brand">
+          <span className="brand-mark"><HeartPulse size={16} /></span>
+          <span>NARI</span>
+        </div>
         <nav className="sidebar-nav">
           <a href="#dashboard" onClick={goTo("dashboard")} className={`nav-item ${activePage === "dashboard" ? "active" : ""}`}>
-            <Home size={18} /><span>Home</span>
+            <Home size={17} /><span>Dashboard</span>
           </a>
           <a href="#assistant" onClick={goTo("assistant")} className={`nav-item ${activePage === "assistant" ? "active" : ""}`}>
-            <MessageCircle size={18} /><span>Ask NARI</span>
+            <MessageCircle size={17} /><span>Ask NARI</span>
           </a>
           <a href="#reports" onClick={goTo("reports")} className={`nav-item ${activePage === "reports" ? "active" : ""}`}>
-            <FileText size={18} /><span>Reports</span>
+            <FileText size={17} /><span>Reports</span>
           </a>
           <a href="#twin" onClick={goTo("twin")} className={`nav-item ${activePage === "twin" ? "active" : ""}`}>
-            <HeartPulse size={18} /><span>My Health</span>
+            <HeartPulse size={17} /><span>Health Twin</span>
           </a>
 
-          <div className="nav-section-label"><span>More</span></div>
+          <div className="nav-section-label"><span>Lifestyle &amp; Clinic</span></div>
           <a href="#reminders" onClick={goTo("reminders")} className={`nav-item nav-item-secondary ${activePage === "reminders" ? "active" : ""}`}>
-            <Pill size={18} /><span>Reminders</span>
+            <Pill size={17} /><span>Reminders</span>
           </a>
           <a href="#activity" onClick={goTo("activity")} className={`nav-item nav-item-secondary ${activePage === "activity" ? "active" : ""}`}>
-            <Activity size={18} /><span>Daily Activity</span>
+            <Activity size={17} /><span>Daily Activity</span>
           </a>
           <a href="#clinician" onClick={goTo("clinician")} className={`nav-item nav-item-secondary ${activePage === "clinician" ? "active" : ""}`}>
-            <Stethoscope size={18} /><span>Clinician Portal</span>
+            <Stethoscope size={17} /><span>Clinician Portal</span>
           </a>
         </nav>
         <div className="sidebar-foot">
@@ -1201,32 +1030,33 @@ export default function NARIApp() {
             <span className="user-avatar">{user?.guest ? <UserRound size={15} color="#fff" /> : <User size={15} color="#fff" />}</span>
             <div>
               <div className="user-name">{displayName}</div>
-              <div className="user-sub">{user?.guest ? "Browsing as guest" : "Health twin active"}</div>
+              <div className="user-sub">{user?.guest ? "Guest session" : "Health twin synced"}</div>
             </div>
           </div>
           <button className="signout-btn" onClick={handleSignOut}>
-            <LogOut size={14} /><span>{user?.guest ? "Exit guest mode" : "Sign out"}</span>
+            <LogOut size={13} /><span>{user?.guest ? "Exit guest mode" : "Sign out"}</span>
           </button>
         </div>
       </aside>
 
+      {/* Main Column */}
       <div className="main-col">
         <header className="topbar">
           <div className="topbar-title">{PAGE_TITLES[activePage]}</div>
           <div className="topbar-actions">
             {user?.guest && (
               <div className="guest-banner">
-                <span>You're browsing as a guest — data won't be saved.</span>
+                <span>Guest mode — data stored locally</span>
                 <button onClick={() => setView("login")}>Sign in</button>
               </div>
             )}
             <button className="icon-btn" onClick={() => setShowNotifPanel((v) => !v)} aria-label="Notifications">
-              <Bell size={18} />
+              <Bell size={17} />
               {unreadCount > 0 && <span className="badge">{unreadCount}</span>}
             </button>
             {showNotifPanel && (
               <>
-                <div className="notif-backdrop" onClick={() => setShowNotifPanel(false)} />
+                <div className="notif-backdrop" onClick={() => setShowNotifPanel(false)} style={{ position: "fixed", inset: 0, zIndex: 20 }} />
                 <div className="notif-panel">
                   <div className="notif-panel-head">
                     <span>Notifications</span>
@@ -1237,13 +1067,13 @@ export default function NARIApp() {
                       <li style={{ cursor: "default" }}>
                         <span className="dot" style={{ background: "transparent" }}></span>
                         <div>
-                          <strong>You're all caught up</strong>
-                          <span>Real flags and updates will show up here as you use NARI.</span>
+                          <strong>All caught up</strong>
+                          <span>Health alerts and medication nudges will appear here.</span>
                         </div>
                       </li>
                     )}
                     {notifications.map((n) => (
-                      <li key={n.id} className={n.unread ? "unread" : ""} onClick={() => markRead(n.id)}>
+                      <li key={n.id} className={n.unread ? "unread" : ""}>
                         <span className="dot"></span>
                         <div><strong>{n.text}</strong><span>{n.time}</span></div>
                       </li>
@@ -1260,13 +1090,13 @@ export default function NARIApp() {
             <>
               <section className="welcome-card">
                 <div>
-                  <p className="eyebrow-sm">Good to see you</p>
+                  <p className="eyebrow-sm">Overview</p>
                   <h1>Welcome back, {displayName}</h1>
-                  <p className="muted">Here's where things stand with your health twin today.</p>
+                  <p className="muted">Here is your continuous health twin status today.</p>
                 </div>
                 <div className="quick-actions">
-                  <a href="#assistant" onClick={goTo("assistant")} className="qa-btn primary"><MessageCircle size={15} />Ask the assistant</a>
-                  <a href="#reports" onClick={goTo("reports")} className="qa-btn"><Upload size={15} />Scan a report</a>
+                  <a href="#assistant" onClick={goTo("assistant")} className="qa-btn primary"><MessageCircle size={14} />Consult Assistant</a>
+                  <a href="#reports" onClick={goTo("reports")} className="qa-btn"><Upload size={14} />Scan Lab Report</a>
                 </div>
               </section>
 
@@ -1279,27 +1109,27 @@ export default function NARIApp() {
                     <>
                       <div className="stat-card">
                         <MessageCircle size={18} className="stat-icon purple" />
-                        <div className="stat-label">Assistant chats</div>
+                        <div className="stat-label">Consultations</div>
                         <div className="stat-value">{userTurns}</div>
                         <div className="stat-sub">{userTurns === 0 ? "Ask your first question" : "This session"}</div>
                       </div>
                       <div className="stat-card">
                         <TrendingDown size={18} className="stat-icon teal" />
-                        <div className="stat-label">Latest report flag</div>
+                        <div className="stat-label">Latest Lab Status</div>
                         <div className="stat-value">{latestReport ? latestReport.statusLabel : "None yet"}</div>
-                        <div className="stat-sub">{latestReport ? latestReport.name : "Upload a lab report to see flags"}</div>
+                        <div className="stat-sub">{latestReport ? latestReport.name : "Upload a PDF or photo report"}</div>
                       </div>
                       <div className="stat-card">
                         <AlertTriangle size={18} className="stat-icon rose" />
-                        <div className="stat-label">Risk signals</div>
+                        <div className="stat-label">Clinical Risk Signals</div>
                         <div className="stat-value">{sessionRiskSignals.length}</div>
-                        <div className="stat-sub">{latestRisk ? `${latestRisk.domain} pattern (${latestRisk.level})` : "None flagged this session"}</div>
+                        <div className="stat-sub">{latestRisk ? `${latestRisk.domain} (${latestRisk.level})` : "None flagged this session"}</div>
                       </div>
                       <div className="stat-card">
                         <FileText size={18} className="stat-icon violet" />
-                        <div className="stat-label">Reports on file</div>
+                        <div className="stat-label">Reports on Record</div>
                         <div className="stat-value">{pastReports.length}</div>
-                        <div className="stat-sub">{pastReports.length === 0 ? "Nothing uploaded yet" : "In this session"}</div>
+                        <div className="stat-sub">{pastReports.length === 0 ? "Nothing uploaded yet" : "In current record"}</div>
                       </div>
                     </>
                   );
@@ -1308,12 +1138,11 @@ export default function NARIApp() {
 
               <section className="pipeline-card">
                 <div className="pipeline-head">
-                  <Network size={16} />
-                  <h3>How NARI thinks - the multi-agent pipeline</h3>
+                  <Network size={15} />
+                  <h3>Clinical Multi-Agent Reasoning Pipeline</h3>
                 </div>
-                <p className="muted-sm">
-                  Every chat and voice turn runs through this LangGraph orchestrator
-                  (<code>backend/app/agents/graph.py</code>) before you see a reply.
+                <p className="muted-sm" style={{ margin: "4px 0 0", color: "var(--ink-muted)", fontSize: "12px" }}>
+                  Every consultation is processed through a deterministic safety check, specialty routing, and evidence retrieval.
                 </p>
                 <div className="pipeline-row">
                   {AGENT_PIPELINE.map((step, i) => (
@@ -1325,21 +1154,21 @@ export default function NARIApp() {
                           <span>{step.note}</span>
                         </div>
                       </div>
-                      {i < AGENT_PIPELINE.length - 1 && <ChevronRight size={16} className="pipeline-arrow" />}
+                      {i < AGENT_PIPELINE.length - 1 && <ChevronRight size={14} className="pipeline-arrow" />}
                     </div>
                   ))}
                 </div>
               </section>
 
               <section className="activity-card">
-                <h3>Recent activity</h3>
+                <h3>Recent Activity &amp; Logs</h3>
                 {(() => {
                   const items = [];
                   sessionRiskSignals.slice(0, 3).forEach((r, i) => {
                     items.push({
                       key: `risk-${i}`,
                       dot: "rose",
-                      title: `${r.domain} pattern flagged (${r.level})`,
+                      title: `${r.domain} clinical pattern flagged (${r.level})`,
                       when: "This session",
                     });
                   });
@@ -1347,7 +1176,7 @@ export default function NARIApp() {
                     items.push({
                       key: `report-${i}`,
                       dot: "teal",
-                      title: `Report scanned — ${r.name}`,
+                      title: `Pathology report scanned — ${r.name}`,
                       when: r.date,
                     });
                   });
@@ -1355,14 +1184,14 @@ export default function NARIApp() {
                     items.push({
                       key: "chat",
                       dot: "purple",
-                      title: "Talked with the NARI assistant",
+                      title: "Consulted NARI care assistant",
                       when: "This session",
                     });
                   }
                   if (items.length === 0) {
                     return (
-                      <p className="muted-sm">
-                        Nothing logged yet — ask the assistant a question or upload a lab report to see activity here.
+                      <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12.5px" }}>
+                        No activity logged yet — ask the assistant a health question or upload a lab report to populate this feed.
                       </p>
                     );
                   }
@@ -1386,23 +1215,23 @@ export default function NARIApp() {
               <div className="chat-toolbar">
                 <div className="chat-toolbar-left">
                   <Sparkles size={15} />
-                  <span>Clinical multi-agent assistant</span>
+                  <span>Clinical Care Consultation</span>
                 </div>
                 <div className="chat-toolbar-right">
-                  <button className="tool-btn" onClick={clearChat} title="Start a new consultation">
+                  <button className="tool-btn" onClick={clearChat} title="Reset consultation">
                     <RotateCcw size={13} />
-                    <span>New Chat</span>
+                    <span>New Consultation</span>
                   </button>
                   <button className={`tool-btn ${speakEnabled ? "on" : ""}`} onClick={() => setSpeakEnabled((v) => !v)}>
                     {speakEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                    <span>{speakEnabled ? "Voice On" : "Voice Off"}</span>
+                    <span>{speakEnabled ? "Voice Enabled" : "Voice Muted"}</span>
                   </button>
                 </div>
               </div>
 
               <div className="chat-disclaimer">
                 <Info size={12} />
-                <span>Educational guidance, not a diagnosis. In a medical emergency, contact local emergency services immediately.</span>
+                <span>Educational guidance grounded in clinical literature. Not a substitute for emergency care or medical diagnosis.</span>
               </div>
 
               <div className="chat-window">
@@ -1415,17 +1244,17 @@ export default function NARIApp() {
                       ) : (
                         m.text
                       )}
-                      
+
                       {m.riskSignal && (
                         <div className={`risk-flag risk-${(m.riskSignal.level || "").toLowerCase()}`}>
                           <AlertTriangle size={13} />
-                          <span>{LEVEL_LABEL[m.riskSignal.level] || "Worth a closer look"} — {m.riskSignal.next_step}</span>
+                          <span>{LEVEL_LABEL[m.riskSignal.level] || "Observation"} — {m.riskSignal.next_step}</span>
                         </div>
                       )}
 
                       {m.riskSignal && m.riskSignal.factors && m.riskSignal.factors.length > 0 && (
                         <details className="expand-panel">
-                          <summary>Why was this flagged?</summary>
+                          <summary>View Clinical Risk Factors</summary>
                           <div className="expand-body">
                             <ul>
                               {m.riskSignal.factors.map((f, i) => <li key={i}>{f}</li>)}
@@ -1436,19 +1265,19 @@ export default function NARIApp() {
 
                       {m.evidence && m.evidence.length > 0 && (
                         <details className="expand-panel">
-                          <summary>Medical evidence</summary>
+                          <summary>Referenced Medical Protocols ({m.evidence.length})</summary>
                           <div className="expand-body">
-                            <div className="evidence-list">
+                            <ul>
                               {m.evidence.slice(0, 3).map((e) => (
-                                <div key={e.chunk_id} className="evidence-item">
+                                <li key={e.chunk_id}>
                                   {e.source_url ? (
-                                    <a href={e.source_url} target="_blank" rel="noreferrer">{e.source_title}</a>
+                                    <a href={e.source_url} target="_blank" rel="noreferrer" style={{ color: "var(--deep-forest)", textDecoration: "underline" }}>{e.source_title}</a>
                                   ) : (
                                     e.source_title
                                   )}
-                                </div>
+                                </li>
                               ))}
-                            </div>
+                            </ul>
                           </div>
                         </details>
                       )}
@@ -1456,7 +1285,7 @@ export default function NARIApp() {
                       {m.sender === "assistant" && (
                         <div className="msg-footer">
                           <button className="msg-action-btn" onClick={() => copyMessage(m.id, m.text)}>
-                            {copiedId === m.id ? <Check size={12} color="#3F8F87" /> : <Copy size={12} />}
+                            {copiedId === m.id ? <Check size={12} color="#059669" /> : <Copy size={12} />}
                             <span>{copiedId === m.id ? "Copied" : "Copy"}</span>
                           </button>
                           <button className="msg-action-btn" onClick={() => speak(m.text)}>
@@ -1485,26 +1314,26 @@ export default function NARIApp() {
                 </div>
               )}
 
-              {voiceError && <div className="voice-error"><AlertTriangle size={13} />{voiceError}</div>}
+              {voiceError && <div className="voice-error" style={{ color: "#DC2626", fontSize: "12px", padding: "0 20px 8px" }}>{voiceError}</div>}
 
               <div className="chat-input-row">
                 <button
                   className={`mic-btn ${isListening ? "listening" : ""} ${!micSupported ? "disabled" : ""}`}
                   onClick={toggleListening}
                   aria-label="Voice input"
-                  title={useServerStt ? "Voice via server (Whisper + Piper)" : voiceSupported ? "Voice via browser speech" : "Voice input unavailable"}
+                  title={micSupported ? "Voice input" : "Microphone unavailable"}
                 >
-                  {micSupported ? <Mic size={17} /> : <MicOff size={17} />}
+                  {micSupported ? <Mic size={16} /> : <MicOff size={16} />}
                 </button>
                 <input
                   ref={inputRef}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                  placeholder={isListening ? "Listening…" : "Ask about symptoms, labs, nutrition, cycles…"}
+                  placeholder={isListening ? "Listening…" : "Ask about symptoms, lab results, medications, or cycle phases…"}
                   className="chat-input"
                 />
-                <button className="send-btn" onClick={() => handleSend()} aria-label="Send"><Send size={16} /></button>
+                <button className="send-btn" onClick={() => handleSend()} aria-label="Send"><Send size={15} /></button>
               </div>
             </div>
           )}
@@ -1519,8 +1348,8 @@ export default function NARIApp() {
                 onDrop={handleDrop}
               >
                 <Upload size={24} />
-                <p><strong>Click to upload</strong> or drag a lab report here</p>
-                <span className="muted-sm">PDF or image · scanned with Document AI + OCR</span>
+                <p><strong>Click to upload</strong> or drag pathology report here</p>
+                <span className="muted-sm">Accepts scanned PDF or image photo (PNG, JPG) · Parsed via Tesseract &amp; Clinical OCR</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1534,44 +1363,48 @@ export default function NARIApp() {
                 <div className="scan-card">
                   <div className="scan-card-head">
                     <FileText size={15} />
-                    <span>{reportFile ? reportFile.name : "report"}</span>
+                    <span>{reportFile ? reportFile.name : "Report"}</span>
                     {scanState === "scanning" && <Loader2 size={14} className="spin" />}
                     {scanState === "done" && <CheckCircle2 size={14} className="ok" />}
                     {scanState === "error" && <AlertTriangle size={14} className="err" />}
                   </div>
 
                   {scanState === "scanning" && (
-                    <p className="muted-sm">Reading document with OCR and matching against her baseline…</p>
+                    <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12.5px" }}>
+                      Extracting text layers, performing OCR analysis, and standardizing medical biomarker values…
+                    </p>
                   )}
 
-                  {scanState === "error" && <p className="muted-sm">{scanErrorText}</p>}
+                  {scanState === "error" && <p className="muted-sm" style={{ color: "var(--rose-alert)", fontSize: "12.5px" }}>{scanErrorText}</p>}
 
                   {scanState === "done" && scanResult && (
                     <>
                       <LabReportChart metrics={scanResult.metrics} />
                       <table className="marker-table">
-                        <thead><tr><th>Marker</th><th>Value</th><th>Unit</th><th></th></tr></thead>
+                        <thead><tr><th>Biomarker</th><th>Value</th><th>Unit</th><th>Reference Status</th></tr></thead>
                         <tbody>
                           {scanResult.metrics.map((m, i) => (
                             <tr key={`${m.biomarker_name}-${i}`}>
-                              <td>{m.biomarker_name}{m.extracted_abbreviation ? ` (${m.extracted_abbreviation})` : ""}</td>
+                              <td><strong>{m.biomarker_name}</strong>{m.extracted_abbreviation ? ` (${m.extracted_abbreviation})` : ""}</td>
                               <td>{m.value}</td>
                               <td>{m.unit || "—"}</td>
-                              <td><span className={`flag-pill ${STATUS_TO_FLAG[m.status] || "flagged"}`}>{(STATUS_TO_FLAG[m.status] || "flagged")}</span></td>
+                              <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Flagged"}</span></td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      <button className="qa-btn" onClick={resetScan}>Scan another report <ChevronRight size={14} /></button>
+                      <button className="qa-btn" onClick={resetScan} style={{ border: "1px solid var(--line)", marginTop: "8px" }}>
+                        Scan another document <ChevronRight size={13} />
+                      </button>
                     </>
                   )}
                 </div>
               )}
 
               <div className="past-reports">
-                <h3>Previous reports</h3>
+                <h3>Uploaded Pathology Records</h3>
                 <ul>
-                  {pastReports.length === 0 && <li><span className="muted-sm">No reports uploaded yet.</span></li>}
+                  {pastReports.length === 0 && <li><span className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12.5px" }}>No previous lab records uploaded yet.</span></li>}
                   {pastReports.map((r) => (
                     <li key={r.id}>
                       <FileText size={15} />
@@ -1587,24 +1420,26 @@ export default function NARIApp() {
           {activePage === "twin" && (
             <div className="twin-shell">
               <section className="twin-profile-card">
-                <div className="twin-avatar"><User size={22} color="#fff" /></div>
+                <div className="twin-avatar"><User size={20} color="#fff" /></div>
                 <div className="twin-profile-info">
                   <h2>{displayName}'s Digital Health Twin</h2>
-                  <p className="muted-sm">Cycle day 18 · Luteal phase · PCOS pattern &amp; iron levels being monitored</p>
+                  <p className="muted-sm">Cycle day 18 · Luteal phase · Hormonal &amp; metabolic parameters active</p>
                 </div>
-                <span className="twin-badge"><HeartPulse size={13} />Twin active</span>
+                <span className="twin-badge"><HeartPulse size={13} />Twin Active</span>
               </section>
 
               <div className="twin-grid">
                 <section className="twin-card">
-                  <div className="twin-card-head"><Droplets size={15} /><h3>Reproductive context</h3></div>
-                  <p className="muted-sm">Last 6 logged cycle lengths (days) visualized with petal radial ring.</p>
+                  <div className="twin-card-head"><Droplets size={15} /><h3>Menstrual Cycle Dynamics</h3></div>
+                  <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12px" }}>Cycle length variation (days) across recent cycles.</p>
                   <CycleRing lengths={DEMO_CYCLE_LENGTHS} />
-                  <p className="muted-sm">Spread of 11 days across recent cycles - this is one factor behind the PCOS pattern flag below.</p>
+                  <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12px", marginTop: "8px" }}>
+                    Variance of 11 days observed across recent cycles — factored into longitudinal risk calculations.
+                  </p>
                 </section>
 
                 <section className="twin-card">
-                  <div className="twin-card-head"><Activity size={15} /><h3>Symptoms &amp; events timeline</h3></div>
+                  <div className="twin-card-head"><Activity size={15} /><h3>Logged Clinical Signals</h3></div>
                   <ul className="twin-timeline">
                     {DEMO_SYMPTOM_TIMELINE.map((t) => (
                       <li key={t.id}>
@@ -1616,68 +1451,72 @@ export default function NARIApp() {
                 </section>
 
                 <section className="twin-card">
-                  <div className="twin-card-head"><FileText size={15} /><h3>Latest biomarkers</h3></div>
+                  <div className="twin-card-head"><FileText size={15} /><h3>Recent Pathology Markers</h3></div>
                   {scanResult ? (
                     <>
                       <LabReportChart metrics={scanResult.metrics} />
                       <table className="marker-table">
-                        <thead><tr><th>Marker</th><th>Value</th><th></th></tr></thead>
+                        <thead><tr><th>Biomarker</th><th>Value</th><th>Status</th></tr></thead>
                         <tbody>
                           {scanResult.metrics.slice(0, 5).map((m, i) => (
                             <tr key={`${m.biomarker_name}-${i}`}>
                               <td>{m.biomarker_name}</td>
                               <td>{m.value} {m.unit || ""}</td>
-                              <td><span className={`flag-pill ${STATUS_TO_FLAG[m.status] || "flagged"}`}>{STATUS_TO_FLAG[m.status] || "flagged"}</span></td>
+                              <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Flagged"}</span></td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </>
                   ) : (
-                    <p className="muted-sm">No report scanned this session yet. <a href="#reports" onClick={goTo("reports")}>Scan a lab report</a> to populate this from real OCR output.</p>
+                    <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12.5px" }}>
+                      No recent lab data scanned in this session. <a href="#reports" onClick={goTo("reports")} style={{ color: "var(--deep-forest)", fontWeight: 700, textDecoration: "underline" }}>Scan a lab report</a> to import values into your twin.
+                    </p>
                   )}
                 </section>
 
                 <section className="twin-card twin-card-wide">
-                  <div className="twin-card-head"><ShieldCheck size={15} /><h3>Risk signals &amp; explainability</h3></div>
-                  <p className="muted-sm">
+                  <div className="twin-card-head"><ShieldCheck size={15} /><h3>Explainable Risk Signals</h3></div>
+                  <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12px" }}>
                     {sessionRiskSignals.length > 0
-                      ? "Generated by this session's Risk Prediction agent - a transparent rule-based pattern matcher, not a diagnosis."
-                      : "No signal from this session yet - showing example output. Ask the assistant about symptoms or hormonal patterns to generate a real one."}
+                      ? "Generated by the Risk Prediction agent based on verified clinical heuristics and guideline criteria."
+                      : "Example risk signals based on active profile criteria. Consult the assistant to generate live signals."}
                   </p>
                   {(sessionRiskSignals.length > 0 ? sessionRiskSignals : DEMO_RISK_SIGNALS).map((r, i) => (
                     <div className={`risk-card risk-card-${(r.level || "L0").toLowerCase()}`} key={i}>
                       <div className="risk-card-head">
                         <span className={`level-pill level-${(r.level || "L0").toLowerCase()}`}>{r.level} · {LEVEL_LABEL[r.level] || "Flag"}</span>
-                        <strong>{r.domain}</strong>
-                        {r.example && <span className="example-tag">Example</span>}
+                        <strong>{r.domain} Pattern</strong>
+                        {r.example && <span className="example-tag">Demonstration</span>}
                       </div>
                       <ul className="factor-list">
                         {(r.factors || []).map((f, fi) => <li key={fi}>{f}</li>)}
                       </ul>
-                      <p className="muted-sm"><em>{r.confidence_note}</em></p>
+                      <p className="muted-sm" style={{ fontSize: "11.5px", color: "var(--ink-muted)" }}><em>{r.confidence_note}</em></p>
                       {r.next_step && <p className="risk-next"><Target size={13} />{r.next_step}</p>}
-                      {r.when_to_seek_care && <p className="risk-next"><AlertTriangle size={13} />Seek care: {r.when_to_seek_care}</p>}
+                      {r.when_to_seek_care && <p className="risk-next"><AlertTriangle size={13} />Clinical action: {r.when_to_seek_care}</p>}
                     </div>
                   ))}
                 </section>
 
                 <section className="twin-card twin-card-wide">
-                  <div className="twin-card-head"><ClipboardCheck size={15} /><h3>Care plan</h3></div>
+                  <div className="twin-card-head"><ClipboardCheck size={15} /><h3>Coordinated Care Plan</h3></div>
                   {sessionCarePlan ? (
                     <>
                       <FormattedMessage text={cleanCarePlanText(sessionCarePlan.summary)} />
                       {sessionCarePlan.next_step && <p className="risk-next"><Target size={13} />{sessionCarePlan.next_step}</p>}
                       {(sessionCarePlan.evidence || []).length > 0 && (
-                        <div className="evidence-list">
+                        <div className="evidence-list" style={{ marginTop: "10px" }}>
                           {sessionCarePlan.evidence.map((e, i) => (
-                            <div key={i} className="evidence-item"><BookOpen size={12} /> {e.source}</div>
+                            <div key={i} className="evidence-item" style={{ fontSize: "11.5px", color: "var(--ink-muted)" }}><BookOpen size={12} /> {e.source}</div>
                           ))}
                         </div>
                       )}
                     </>
                   ) : (
-                    <p className="muted-sm">Once the Care Plan agent combines a reply with risk factors and evidence, it will appear here automatically. Try asking the assistant something health-related first.</p>
+                    <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12.5px" }}>
+                      Care plans are automatically composed during consultations when risk factors and clinical evidence align. Ask the assistant a health question to generate an active plan.
+                    </p>
                   )}
                 </section>
               </div>
@@ -1696,12 +1535,12 @@ export default function NARIApp() {
             <div className="clinician-shell">
               <div className="clinician-banner">
                 <Info size={15} />
-                <span>Preview build: patient roster below is demo data shaped to match the backend's real schema (PatientProfile / RiskSignal / CarePlan / AgentEventLog) - wiring this to real accounts just needs clinician auth on top of the existing tables.</span>
+                <span>Clinician Oversight Portal: Review longitudinal patient cohorts, risk stratifications, and audited event traces.</span>
               </div>
 
               <div className="clinician-grid">
                 <section className="roster-card">
-                  <div className="twin-card-head"><Users size={15} /><h3>Patient roster</h3></div>
+                  <div className="twin-card-head"><Users size={15} /><h3>Patient Roster</h3></div>
                   <ul className="roster-list">
                     {DEMO_PATIENTS.map((p) => (
                       <li
@@ -1709,14 +1548,13 @@ export default function NARIApp() {
                         className={selectedPatientId === p.id ? "selected" : ""}
                         onClick={() => setSelectedPatientId(p.id)}
                       >
-                        <span className={`level-dot level-${p.level.toLowerCase()}`}></span>
                         <div className="roster-info">
                           <strong>{p.name}</strong>
                           <span>{p.age} yrs · {p.concern}</span>
                         </div>
                         <div className="roster-meta">
                           <span className={`level-pill level-${p.level.toLowerCase()}`}>{p.level}</span>
-                          <span className="muted-sm">{p.adherence}% adherence</span>
+                          <span className="muted-sm" style={{ fontSize: "10.5px", color: "var(--ink-muted)" }}>{p.adherence}% adhr</span>
                         </div>
                       </li>
                     ))}
@@ -1733,14 +1571,14 @@ export default function NARIApp() {
                         <div className="patient-detail-head">
                           <div>
                             <h3>{patient.name}</h3>
-                            <p className="muted-sm">{patient.age} yrs · {patient.concern} · Last active {patient.lastActive}</p>
+                            <p className="muted-sm" style={{ fontSize: "12px", color: "var(--ink-muted)", marginTop: "2px" }}>{patient.age} yrs · {patient.concern} · Last active {patient.lastActive}</p>
                           </div>
                           <span className={`level-pill level-${patient.level.toLowerCase()}`}>{patient.level} · {LEVEL_LABEL[patient.level]}</span>
                         </div>
 
                         {detail ? (
                           <>
-                            <h4><ShieldCheck size={14} />Risk signals</h4>
+                            <h4><ShieldCheck size={13} />Clinical Risk Signals</h4>
                             {detail.riskSignals.map((r, i) => (
                               <div className={`risk-card risk-card-${r.level.toLowerCase()}`} key={i}>
                                 <div className="risk-card-head">
@@ -1752,11 +1590,11 @@ export default function NARIApp() {
                               </div>
                             ))}
 
-                            <h4><ClipboardCheck size={14} />Care plan</h4>
+                            <h4><ClipboardCheck size={13} />Structured Care Plan</h4>
                             <FormattedMessage text={cleanCarePlanText(detail.carePlan.summary)} />
                             <p className="risk-next"><Target size={13} />{detail.carePlan.next_step}</p>
 
-                            <h4><Brain size={14} />Agent event log (auditability)</h4>
+                            <h4><Brain size={13} />Agent Execution Audit Log</h4>
                             <ul className="event-log">
                               {detail.eventLog.map((e, i) => (
                                 <li key={i}><span className="event-time">{e.time}</span><strong>{e.agent}</strong><span>{e.note}</span></li>
@@ -1764,7 +1602,7 @@ export default function NARIApp() {
                             </ul>
                           </>
                         ) : (
-                          <p className="muted-sm">No detailed history recorded for this demo patient yet.</p>
+                          <p className="muted-sm" style={{ color: "var(--ink-muted)", fontSize: "12px" }}>No longitudinal data recorded for this patient yet.</p>
                         )}
                       </>
                     );

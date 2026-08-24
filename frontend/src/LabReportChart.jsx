@@ -1,11 +1,13 @@
 import React from "react";
 
-const STATUS_COLOR = { HIGH: "#E7A1A8", LOW: "#F4CE45", NORMAL: "#3F8F87", UNSPECIFIED: "#BAA8E4" };
+const STATUS_COLOR = {
+  HIGH: "#DC2626",
+  LOW: "#D97706",
+  NORMAL: "#059669",
+  UNSPECIFIED: "#94A3B8",
+};
 
-/** Renders a horizontal bar per biomarker, colored by status, with the
- * numeric value labeled. Purely illustrative (not to clinical scale —
- * reference ranges differ per biomarker), designed to give an at-a-glance
- * "how many things are flagged" view next to the numeric table. */
+/** Clean, clinical lab biomarker comparative bar chart */
 export default function LabReportChart({ metrics = [] }) {
   const numeric = metrics
     .map((m) => ({ ...m, num: parseFloat(m.value) }))
@@ -21,13 +23,13 @@ export default function LabReportChart({ metrics = [] }) {
     <div className="lab-chart">
       <style>{`
         .lab-chart{ display:flex; flex-direction:column; gap:12px; margin:16px 0; }
-        .lab-chart-row{ display:grid; grid-template-columns:150px 1fr 70px; align-items:center; gap:10px; }
-        .lab-chart-label{ font-size:12.5px; color:var(--ink-soft,#6B5A8E); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lab-chart-track{ background:#F0E9FF; border-radius:8px; height:14px; overflow:hidden; }
-        .lab-chart-fill{ height:100%; border-radius:8px; transition: width .6s cubic-bezier(.2,.8,.2,1); }
-        .lab-chart-value{ font-size:12px; font-weight:700; color:var(--deep-violet,#34205F); text-align:right; }
-        .lab-chart-legend{ display:flex; gap:14px; font-size:11px; color:var(--ink-soft,#6B5A8E); margin-top:2px; }
-        .lab-chart-legend span{ display:inline-flex; align-items:center; gap:5px; }
+        .lab-chart-row{ display:grid; grid-template-columns:160px 1fr 80px; align-items:center; gap:12px; }
+        .lab-chart-label{ font-size:13px; color:#1E3A34; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .lab-chart-track{ background:#E6ECE8; border-radius:6px; height:12px; overflow:hidden; }
+        .lab-chart-fill{ height:100%; border-radius:6px; transition: width .5s ease; }
+        .lab-chart-value{ font-size:12px; font-weight:700; color:#0F2922; text-align:right; font-variant-numeric: tabular-nums; }
+        .lab-chart-legend{ display:flex; gap:16px; font-size:11.5px; color:#527068; margin-top:6px; font-weight:500; }
+        .lab-chart-legend span{ display:inline-flex; align-items:center; gap:6px; }
         .legend-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
       `}</style>
 
@@ -48,9 +50,9 @@ export default function LabReportChart({ metrics = [] }) {
       ))}
 
       <div className="lab-chart-legend">
-        <span><i className="legend-dot" style={{ background: STATUS_COLOR.HIGH }} />High</span>
-        <span><i className="legend-dot" style={{ background: STATUS_COLOR.LOW }} />Low</span>
         <span><i className="legend-dot" style={{ background: STATUS_COLOR.NORMAL }} />Normal</span>
+        <span><i className="legend-dot" style={{ background: STATUS_COLOR.LOW }} />Low</span>
+        <span><i className="legend-dot" style={{ background: STATUS_COLOR.HIGH }} />High</span>
       </div>
     </div>
   );

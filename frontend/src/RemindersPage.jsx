@@ -24,8 +24,6 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// Normalize both API rows ({id, name, dose, time, frequency, taken_log})
-// and local rows ({id, name, dose, time, frequency, log}) to one shape.
 function normalize(r) {
   return { ...r, log: r.taken_log ?? r.log ?? {} };
 }
@@ -63,7 +61,6 @@ export default function RemindersPage({ onTaken, isGuest }) {
     refresh();
   }, [refresh]);
 
-  // Reminder notification polling
   useEffect(() => {
     const check = () => {
       const now = new Date();
@@ -99,53 +96,58 @@ export default function RemindersPage({ onTaken, isGuest }) {
     const payload = { name: name.trim(), dose: dose.trim() || null, time, frequency };
 
     if (isGuest) {
-      const reminder = { id: Date.now(), ...payload, log: {} };
-      const next = [reminder, ...loadLocal()];
+      const next = [...reminders, { id: `local-${Date.now()}`, ...payload, log: {} }];
+      setReminders(next);
       saveLocal(next);
-      setReminders(next.map(normalize));
-    } else {
-      try {
-        const created = await createReminderApi(payload);
-        setReminders((prev) => [normalize(created), ...prev]);
-      } catch {
-        /* swallow - could show a toast */
-      }
+      setName(""); setDose(""); setShowForm(false);
+      return;
     }
-    setName(""); setDose(""); setTime("08:00"); setFrequency(FREQUENCIES[0]); setShowForm(false);
-  };
 
-  const removeReminder = async (id) => {
-    if (isGuest) {
-      const next = loadLocal().filter((r) => r.id !== id);
-      saveLocal(next);
-      setReminders(next.map(normalize));
-    } else {
-      try {
-        await deleteReminderApi(id);
-        setReminders((prev) => prev.filter((r) => r.id !== id));
-      } catch {
-        /* ignore */
+    try {
+      const created = await createReminderApi(payload);
+      setReminders((prev) => [...prev, normalize(created.reminder || created)]);
+      setName(""); setDose(""); setShowForm(false);
+      if (created.warnings && created.warnings.length > 0) {
+        alert(created.warnings.join("\n"));
       }
+    } catch (err) {
+      alert(err.message || "Failed to create reminder");
     }
   };
 
   const toggleTaken = async (id) => {
     const today = todayKey();
+    const current = reminders.find((r) => r.id === id);
+    if (!current) return;
+    const nextTaken = !current.log?.[today];
+
+    const updatedList = reminders.map((r) =>
+      r.id === id ? { ...r, log: { ...r.log, [today]: nextTaken } } : r
+    );
+    setReminders(updatedList);
+
     if (isGuest) {
-      const next = loadLocal().map((r) => {
-        if (r.id !== id) return r;
-        const nowTaken = !r.log?.[today];
-        if (nowTaken && onTaken) onTaken(r);
-        return { ...r, log: { ...(r.log || {}), [today]: nowTaken } };
-      });
-      saveLocal(next);
-      setReminders(next.map(normalize));
+      saveLocal(updatedList);
+      if (nextTaken && onTaken) onTaken(current.name);
+      return;
+    }
+
+    try {
+      await toggleReminderApi(id, today, nextTaken);
+      if (nextTaken && onTaken) onTaken(current.name);
+    } catch {
+      /* optimistic update kept */
+    }
+  };
+
+  const removeReminder = async (id) => {
+    const updated = reminders.filter((r) => r.id !== id);
+    setReminders(updated);
+    if (isGuest) {
+      saveLocal(updated);
     } else {
       try {
-        const updated = await toggleReminderApi(id);
-        const norm = normalize(updated);
-        if (norm.log?.[today] && onTaken) onTaken(norm);
-        setReminders((prev) => prev.map((r) => (r.id === id ? norm : r)));
+        await deleteReminderApi(id);
       } catch {
         /* ignore */
       }
@@ -160,69 +162,73 @@ export default function RemindersPage({ onTaken, isGuest }) {
       <style>{`
         .reminders-shell{ display:flex; flex-direction:column; gap:20px; }
         .rem-summary{
-          background:var(--gradient-hero); color:#fff; border-radius:24px; padding:24px 28px;
-          display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;
+          background:linear-gradient(140deg, #0A3B31 0%, #0F5144 100%); color:#fff; border-radius:20px; padding:24px 28px;
+          display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; box-shadow:var(--shadow-card);
         }
         .rem-summary-text h2{ color:#fff; font-size:19px; }
-        .rem-summary-text p{ color:rgba(255,247,240,0.82); font-size:13px; margin-top:4px; }
-        .rem-summary-stat{ background:rgba(255,255,255,0.14); border-radius:16px; padding:12px 20px; text-align:center; }
-        .rem-summary-stat strong{ display:block; font-family:var(--font-head); font-size:22px; }
-        .rem-summary-stat span{ font-size:11px; color:rgba(255,247,240,0.8); }
+        .rem-summary-text p{ color:rgba(230,244,241,0.85); font-size:13px; margin-top:4px; }
+        .rem-summary-stat{ background:rgba(255,255,255,0.12); border-radius:14px; padding:10px 18px; text-align:center; border:1px solid rgba(255,255,255,0.18); }
+        .rem-summary-stat strong{ display:block; font-family:var(--font-head); font-size:22px; color:#fff; }
+        .rem-summary-stat span{ font-size:11px; color:rgba(230,244,241,0.8); }
         .rem-notif-btn{
-          display:inline-flex; align-items:center; gap:7px; background:rgba(255,255,255,0.95); color:var(--deep-violet);
-          border:none; border-radius:100px; padding:9px 16px; font-family:var(--font-head); font-weight:600; font-size:12.5px;
+          display:inline-flex; align-items:center; gap:7px; background:#fff; color:#0F5144;
+          border:none; border-radius:100px; padding:8px 15px; font-family:var(--font-head); font-weight:700; font-size:12px; cursor:pointer;
         }
         .rem-add-btn{
-          display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg,var(--primary-purple),#34205F);
-          color:#fff; border:none; border-radius:100px; padding:12px 20px; font-family:var(--font-head); font-weight:600;
-          font-size:13.5px; box-shadow:var(--shadow-soft); transition:transform .18s ease;
+          display:inline-flex; align-items:center; gap:8px; background:#0F5144;
+          color:#fff; border:none; border-radius:12px; padding:11px 18px; font-family:var(--font-head); font-weight:700;
+          font-size:13px; transition:all .18s ease; cursor:pointer;
         }
-        .rem-add-btn:hover{ transform:translateY(-2px); }
+        .rem-add-btn:hover{ background:#0A3B31; transform:translateY(-1px); box-shadow:0 4px 12px rgba(15,81,68,0.2); }
         .rem-form{
-          background:#fff; border-radius:20px; padding:22px 24px; box-shadow:var(--shadow-soft);
-          display:grid; grid-template-columns:1fr 1fr; gap:14px;
+          background:#fff; border-radius:18px; padding:22px 24px; box-shadow:var(--shadow-card);
+          border:1px solid #E2EBE7; display:grid; grid-template-columns:1fr 1fr; gap:14px;
         }
         .rem-form-row{ display:flex; flex-direction:column; gap:6px; }
         .rem-form-row.full{ grid-column:1 / -1; }
-        .rem-form-row label{ font-size:12px; font-weight:600; color:var(--ink-soft); }
+        .rem-form-row label{ font-size:12px; font-weight:600; color:#1E3A34; }
         .rem-form-row input, .rem-form-row select{
-          border:1.5px solid var(--line); border-radius:12px; padding:10px 13px; font-size:14px; font-family:inherit; outline:none;
+          border:1.5px solid #E2E8F0; border-radius:10px; padding:9px 12px; font-size:13.5px; font-family:inherit; outline:none;
         }
-        .rem-form-row input:focus, .rem-form-row select:focus{ border-color:var(--primary-purple); }
+        .rem-form-row input:focus, .rem-form-row select:focus{ border-color:#0F5144; }
         .rem-form-actions{ grid-column:1 / -1; display:flex; gap:10px; justify-content:flex-end; }
-        .rem-list{ display:flex; flex-direction:column; gap:14px; }
-        .rem-card{
-          background:#fff; border-radius:20px; padding:18px 22px; box-shadow:var(--shadow-soft);
-          display:flex; align-items:center; gap:16px; transition:transform .18s ease;
+        .rem-cancel-btn{
+          background:#FAFCFB; border:1px solid #CBD5E1; color:#527068; border-radius:10px; padding:9px 16px;
+          font-family:var(--font-head); font-weight:700; font-size:13px; cursor:pointer;
         }
-        .rem-card:hover{ transform:translateY(-2px); }
-        .rem-card.taken{ opacity:0.65; }
+        .rem-list{ display:flex; flex-direction:column; gap:12px; }
+        .rem-card{
+          background:#fff; border-radius:16px; padding:16px 20px; box-shadow:var(--shadow-card);
+          border:1px solid #E2EBE7; display:flex; align-items:center; gap:14px; transition:all .18s ease;
+        }
+        .rem-card:hover{ border-color:#10B981; transform:translateY(-1px); }
+        .rem-card.taken{ opacity:0.65; background:#FAFCFB; }
         .rem-icon{
-          width:46px; height:46px; border-radius:14px; background:var(--gradient-blush);
-          display:flex; align-items:center; justify-content:center; color:var(--primary-purple); flex-shrink:0;
+          width:42px; height:42px; border-radius:12px; background:#E6F4F1;
+          display:flex; align-items:center; justify-content:center; color:#0F5144; flex-shrink:0;
         }
         .rem-info{ flex:1; min-width:0; }
-        .rem-info strong{ display:block; font-family:var(--font-head); font-size:14.5px; color:var(--deep-violet); }
-        .rem-info span{ font-size:12px; color:var(--ink-soft); display:flex; align-items:center; gap:5px; margin-top:3px; flex-wrap:wrap; }
+        .rem-info strong{ display:block; font-family:var(--font-head); font-size:14px; color:#0F2922; }
+        .rem-info span{ font-size:12px; color:#527068; display:flex; align-items:center; gap:5px; margin-top:2px; flex-wrap:wrap; }
         .rem-check-btn{
-          width:38px; height:38px; border-radius:50%; border:1.5px solid var(--line); background:#fff;
-          display:flex; align-items:center; justify-content:center; color:var(--ink-soft); flex-shrink:0; transition:all .2s ease;
+          width:36px; height:36px; border-radius:50%; border:1.5px solid #CBD5E1; background:#fff;
+          display:flex; align-items:center; justify-content:center; color:#83A69C; flex-shrink:0; transition:all .2s ease; cursor:pointer;
         }
-        .rem-check-btn.done{ background:var(--mint); border-color:var(--mint); color:#fff; }
+        .rem-check-btn.done{ background:#059669; border-color:#059669; color:#fff; }
         .rem-delete-btn{
-          width:34px; height:34px; border-radius:50%; border:none; background:none; color:var(--ink-soft);
-          display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:color .18s ease;
+          width:32px; height:32px; border-radius:50%; border:none; background:none; color:#94A3B8;
+          display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:color .18s ease; cursor:pointer;
         }
-        .rem-delete-btn:hover{ color:#b23b4a; }
-        .rem-empty{ text-align:center; padding:50px 20px; color:var(--ink-soft); }
-        .rem-empty svg{ color:var(--lavender); margin-bottom:12px; }
-        .rem-guest-note{ font-size:12px; color:var(--ink-soft); background:var(--gradient-blush); border-radius:14px; padding:10px 16px; }
+        .rem-delete-btn:hover{ color:#DC2626; background:#FEF2F2; }
+        .rem-empty{ text-align:center; padding:48px 20px; color:#527068; }
+        .rem-empty svg{ color:#83A69C; margin-bottom:12px; }
+        .rem-guest-note{ font-size:12px; color:#527068; background:#E6F4F1; border-radius:12px; padding:10px 16px; border:1px solid #D1FAE5; }
       `}</style>
 
       <div className="rem-summary">
         <div className="rem-summary-text">
-          <h2>Medication reminders</h2>
-          <p>Never miss a dose — set a time and NARI will nudge you.</p>
+          <h2>Medication &amp; Prescription Reminders</h2>
+          <p>Automated alerts and interaction safety monitoring across your routine.</p>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <div className="rem-summary-stat">
@@ -230,18 +236,20 @@ export default function RemindersPage({ onTaken, isGuest }) {
             <span>Taken today</span>
           </div>
           {notifPermission !== "granted" && notifPermission !== "unsupported" && (
-            <button className="rem-notif-btn" onClick={requestNotifications}><Bell size={14} />Enable notifications</button>
+            <button className="rem-notif-btn" onClick={requestNotifications}><Bell size={13} />Enable browser alerts</button>
           )}
         </div>
       </div>
 
       {isGuest && (
-        <div className="rem-guest-note">You're in guest mode — reminders are saved on this device only. Sign in to sync them to your account.</div>
+        <div className="rem-guest-note">
+          You are in guest mode — reminders are saved locally in your browser. Sign in to synchronize them to your profile.
+        </div>
       )}
 
       {!showForm && (
         <button className="rem-add-btn" onClick={() => setShowForm(true)} style={{ alignSelf: "flex-start" }}>
-          <Plus size={16} />Add medication reminder
+          <Plus size={15} /> Add medication reminder
         </button>
       )}
 
@@ -249,11 +257,11 @@ export default function RemindersPage({ onTaken, isGuest }) {
         <form className="rem-form" onSubmit={addReminder}>
           <div className="rem-form-row">
             <label>Medication name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Iron supplement" autoFocus />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ferrous sulfate (Iron)" autoFocus required />
           </div>
           <div className="rem-form-row">
             <label>Dose (optional)</label>
-            <input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="e.g. 1 tablet, 500mg" />
+            <input value={dose} onChange={(e) => setDose(e.target.value)} placeholder="e.g. 1 tablet, 200mg" />
           </div>
           <div className="rem-form-row">
             <label>Time</label>
@@ -266,8 +274,8 @@ export default function RemindersPage({ onTaken, isGuest }) {
             </select>
           </div>
           <div className="rem-form-actions">
-            <button type="button" className="qa-btn" onClick={() => setShowForm(false)}>Cancel</button>
-            <button type="submit" className="rem-add-btn"><Plus size={15} />Save reminder</button>
+            <button type="button" className="rem-cancel-btn" onClick={() => setShowForm(false)}>Cancel</button>
+            <button type="submit" className="rem-add-btn"><Plus size={14} />Save reminder</button>
           </div>
         </form>
       )}
@@ -276,8 +284,8 @@ export default function RemindersPage({ onTaken, isGuest }) {
         <p className="muted-sm">Loading reminders…</p>
       ) : reminders.length === 0 ? (
         <div className="rem-empty">
-          <AlarmClock size={40} />
-          <p>No reminders yet. Add your first medication above.</p>
+          <AlarmClock size={36} />
+          <p>No medication reminders configured. Add your first prescription above.</p>
         </div>
       ) : (
         <div className="rem-list">
@@ -285,7 +293,7 @@ export default function RemindersPage({ onTaken, isGuest }) {
             const taken = !!r.log?.[today];
             return (
               <div className={`rem-card ${taken ? "taken" : ""}`} key={r.id}>
-                <div className="rem-icon"><Pill size={20} /></div>
+                <div className="rem-icon"><Pill size={18} /></div>
                 <div className="rem-info">
                   <strong>{r.name}{r.dose ? ` · ${r.dose}` : ""}</strong>
                   <span><Clock size={12} />{r.time} · {r.frequency}</span>
@@ -298,7 +306,7 @@ export default function RemindersPage({ onTaken, isGuest }) {
                   <CheckCircle2 size={18} />
                 </button>
                 <button className="rem-delete-btn" onClick={() => removeReminder(r.id)} aria-label="Delete reminder">
-                  <Trash2 size={16} />
+                  <Trash2 size={15} />
                 </button>
               </div>
             );
