@@ -16,6 +16,7 @@ import CycleRing from "./CycleRing.jsx";
 import RemindersPage from "./RemindersPage.jsx";
 import ActivityTrackerPage from "./ActivityTrackerPage.jsx";
 import PeriodTrackerPage from "./PeriodTrackerPage.jsx";
+import GuestGate from "./GuestGate.jsx";
 
 const AGENT_PIPELINE = [
   { name: "Safety & Emergency", note: "Immediate clinical safety assessment" },
@@ -487,6 +488,23 @@ export default function App() {
     const msgText = (overrideText || input).trim();
     if (!msgText || isTyping) return;
 
+    const guestTurns = messages.filter((m) => m.sender === "user").length;
+    if (user?.guest && guestTurns >= 4) {
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), sender: "user", text: msgText },
+        {
+          id: Date.now() + 1,
+          sender: "assistant",
+          agent: "NARI",
+          isGuestLimit: true,
+          text: "You have completed your 4 free consultation questions in guest mode. To continue asking unlimited questions, save your conversation history, and access all health trackers, please sign in or create a free account.",
+        },
+      ]);
+      if (!overrideText) setInput("");
+      return;
+    }
+
     const userMsg = { id: Date.now(), sender: "user", text: msgText };
     setMessages((prev) => [...prev, userMsg]);
     if (!overrideText) setInput("");
@@ -580,6 +598,12 @@ export default function App() {
 
   const handleFile = async (file) => {
     if (!file) return;
+    if (user?.guest && pastReports.length >= 1) {
+      showToast("Guest preview limit: 1 report. Please sign in.");
+      setScanState("error");
+      setScanErrorText("You have already scanned a pathology report in guest preview mode. To upload unlimited lab documents and securely save them in your health twin, please create a free account.");
+      return;
+    }
     setReportFile(file);
     setScanState("scanning");
     setScanErrorText("");
@@ -1353,6 +1377,31 @@ export default function App() {
                         </details>
                       )}
 
+                      {m.isGuestLimit && (
+                        <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #D5E2DC" }}>
+                          <button
+                            onClick={() => setView("login")}
+                            className="qa-btn primary"
+                            style={{
+                              background: "var(--md-primary)",
+                              color: "#fff",
+                              padding: "10px 18px",
+                              fontSize: "13px",
+                              fontWeight: "700",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
+                              boxShadow: "0 2px 8px rgba(27,94,80,0.25)",
+                              borderRadius: "999px",
+                              border: "none",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Create Free Account / Sign In <ChevronRight size={14} />
+                          </button>
+                        </div>
+                      )}
+
                       {m.sender === "assistant" && (
                         <div className="msg-footer">
                           <button className="msg-action-btn" onClick={() => copyMessage(m.id, m.text)}>
@@ -1607,96 +1656,152 @@ export default function App() {
           )}
 
           {activePage === "periods" && (
-            <PeriodTrackerPage isGuest={!!user?.guest} />
+            user?.guest ? (
+              <GuestGate
+                featureTitle="Secure Menstrual & Period Tracker"
+                featureDescription="Tracking your continuous period dates, flow intensity, and hormonal cycle variations requires an authenticated account to keep your reproductive data private and encrypted."
+                benefits={[
+                  "End-to-end user-isolated storage — never shared or leaked",
+                  "Automated cycle phase predictions & fertile window calculation",
+                  "Cycle variance analysis that powers NARI's clinical risk engine",
+                ]}
+                onSignIn={() => setView("login")}
+                onGoToChat={() => setActivePage("assistant")}
+              />
+            ) : (
+              <PeriodTrackerPage isGuest={false} />
+            )
           )}
 
           {activePage === "reminders" && (
-            <RemindersPage isGuest={!!user?.guest} />
+            user?.guest ? (
+              <GuestGate
+                featureTitle="Medicine & Prescription Reminders"
+                featureDescription="Managing your medication schedules, tracking daily taken logs, and receiving browser notifications requires a secure account to keep your health routines synchronized."
+                benefits={[
+                  "Encrypted medication schedule & dosage tracking",
+                  "Daily taken/missed adherence logs preserved across sessions",
+                  "Automated safety interaction checks when adding new medicines",
+                ]}
+                onSignIn={() => setView("login")}
+                onGoToChat={() => setActivePage("assistant")}
+              />
+            ) : (
+              <RemindersPage isGuest={false} />
+            )
           )}
 
           {activePage === "activity" && (
-            <ActivityTrackerPage isGuest={!!user?.guest} />
+            user?.guest ? (
+              <GuestGate
+                featureTitle="Daily Activity & Wellness Tracker"
+                featureDescription="Logging daily water intake, sleep hours, exercise minutes, and syncing with Google Fit wearable sensors requires an account to maintain longitudinal wellness records."
+                benefits={[
+                  "Longitudinal hydration, sleep, exercise, and mood logs",
+                  "Seamless Google Fit & Health Connect wearable integration",
+                  "Trend analysis incorporated directly into your Digital Health Twin",
+                ]}
+                onSignIn={() => setView("login")}
+                onGoToChat={() => setActivePage("assistant")}
+              />
+            ) : (
+              <ActivityTrackerPage isGuest={false} />
+            )
           )}
 
           {activePage === "clinician" && (
-            <div className="clinician-shell">
-              <div className="clinician-banner">
-                <Info size={15} />
-                <span>Clinician Oversight Portal: Review longitudinal patient cohorts, risk stratifications, and audited event traces.</span>
-              </div>
+            user?.guest ? (
+              <GuestGate
+                featureTitle="Clinician Oversight Portal"
+                featureDescription="Access to multi-patient clinical rosters, risk stratifications, and audit event traces is restricted to registered clinical accounts."
+                benefits={[
+                  "Multi-patient cohort longitudinal risk stratification",
+                  "Verified explainable evidence logs and guideline references",
+                  "Structured clinical handoff and care continuity tracking",
+                ]}
+                onSignIn={() => setView("login")}
+                onGoToChat={() => setActivePage("assistant")}
+              />
+            ) : (
+              <div className="clinician-shell">
+                <div className="clinician-banner">
+                  <Info size={15} />
+                  <span>Clinician Oversight Portal: Review longitudinal patient cohorts, risk stratifications, and audited event traces.</span>
+                </div>
 
-              <div className="clinician-grid">
-                <section className="roster-card">
-                  <div className="twin-card-head"><Users size={15} /><h3>Patient Roster</h3></div>
-                  <ul className="roster-list">
-                    {DEMO_PATIENTS.map((p) => (
-                      <li
-                        key={p.id}
-                        className={selectedPatientId === p.id ? "selected" : ""}
-                        onClick={() => setSelectedPatientId(p.id)}
-                      >
-                        <div className="roster-info">
-                          <strong>{p.name}</strong>
-                          <span>{p.age} yrs · {p.concern}</span>
-                        </div>
-                        <div className="roster-meta">
-                          <span className={`level-pill level-${p.level.toLowerCase()}`}>{p.level}</span>
-                          <span className="muted-sm" style={{ fontSize: "11px", color: "var(--md-ink-muted)" }}>{p.adherence}% adhr</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-
-                <section className="patient-detail-card">
-                  {(() => {
-                    const patient = DEMO_PATIENTS.find((p) => p.id === selectedPatientId);
-                    const detail = DEMO_PATIENT_DETAIL[selectedPatientId];
-                    if (!patient) return <p className="muted-sm">Select a patient from the roster.</p>;
-                    return (
-                      <>
-                        <div className="patient-detail-head">
-                          <div>
-                            <h3>{patient.name}</h3>
-                            <p className="muted-sm" style={{ fontSize: "12.5px", color: "var(--md-ink-muted)", marginTop: "2px" }}>{patient.age} yrs · {patient.concern} · Last active {patient.lastActive}</p>
+                <div className="clinician-grid">
+                  <section className="roster-card">
+                    <div className="twin-card-head"><Users size={15} /><h3>Patient Roster</h3></div>
+                    <ul className="roster-list">
+                      {DEMO_PATIENTS.map((p) => (
+                        <li
+                          key={p.id}
+                          className={selectedPatientId === p.id ? "selected" : ""}
+                          onClick={() => setSelectedPatientId(p.id)}
+                        >
+                          <div className="roster-info">
+                            <strong>{p.name}</strong>
+                            <span>{p.age} yrs · {p.concern}</span>
                           </div>
-                          <span className={`level-pill level-${patient.level.toLowerCase()}`}>{patient.level} · {LEVEL_LABEL[patient.level]}</span>
-                        </div>
+                          <div className="roster-meta">
+                            <span className={`level-pill level-${p.level.toLowerCase()}`}>{p.level}</span>
+                            <span className="muted-sm" style={{ fontSize: "11px", color: "var(--md-ink-muted)" }}>{p.adherence}% adhr</span>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
 
-                        {detail ? (
-                          <>
-                            <h4><ShieldCheck size={13} />Clinical Risk Signals</h4>
-                            {detail.riskSignals.map((r, i) => (
-                              <div className={`risk-card risk-card-${r.level.toLowerCase()}`} key={i}>
-                                <div className="risk-card-head">
-                                  <span className={`level-pill level-${r.level.toLowerCase()}`}>{r.level}</span>
-                                  <strong>{r.domain}</strong>
+                  <section className="patient-detail-card">
+                    {(() => {
+                      const patient = DEMO_PATIENTS.find((p) => p.id === selectedPatientId);
+                      const detail = DEMO_PATIENT_DETAIL[selectedPatientId];
+                      if (!patient) return <p className="muted-sm">Select a patient from the roster.</p>;
+                      return (
+                        <>
+                          <div className="patient-detail-head">
+                            <div>
+                              <h3>{patient.name}</h3>
+                              <p className="muted-sm" style={{ fontSize: "12.5px", color: "var(--md-ink-muted)", marginTop: "2px" }}>{patient.age} yrs · {patient.concern} · Last active {patient.lastActive}</p>
+                            </div>
+                            <span className={`level-pill level-${patient.level.toLowerCase()}`}>{patient.level} · {LEVEL_LABEL[patient.level]}</span>
+                          </div>
+
+                          {detail ? (
+                            <>
+                              <h4><ShieldCheck size={13} />Clinical Risk Signals</h4>
+                              {detail.riskSignals.map((r, i) => (
+                                <div className={`risk-card risk-card-${r.level.toLowerCase()}`} key={i}>
+                                  <div className="risk-card-head">
+                                    <span className={`level-pill level-${r.level.toLowerCase()}`}>{r.level}</span>
+                                    <strong>{r.domain}</strong>
+                                  </div>
+                                  <ul className="factor-list">{r.factors.map((f, fi) => <li key={fi}>{f}</li>)}</ul>
+                                  {r.next_step && <p className="risk-next"><Target size={13} />{r.next_step}</p>}
                                 </div>
-                                <ul className="factor-list">{r.factors.map((f, fi) => <li key={fi}>{f}</li>)}</ul>
-                                {r.next_step && <p className="risk-next"><Target size={13} />{r.next_step}</p>}
-                              </div>
-                            ))}
-
-                            <h4><ClipboardCheck size={13} />Structured Care Plan</h4>
-                            <FormattedMessage text={cleanCarePlanText(detail.carePlan.summary)} />
-                            <p className="risk-next"><Target size={13} />{detail.carePlan.next_step}</p>
-
-                            <h4><Brain size={13} />Agent Execution Audit Log</h4>
-                            <ul className="event-log">
-                              {detail.eventLog.map((e, i) => (
-                                <li key={i}><span className="event-time">{e.time}</span><strong>{e.agent}</strong><span>{e.note}</span></li>
                               ))}
-                            </ul>
-                          </>
-                        ) : (
-                          <p className="muted-sm" style={{ color: "var(--md-ink-muted)", fontSize: "12.5px" }}>No longitudinal data recorded for this patient yet.</p>
-                        )}
-                      </>
-                    );
-                  })()}
-                </section>
+
+                              <h4><ClipboardCheck size={13} />Structured Care Plan</h4>
+                              <FormattedMessage text={cleanCarePlanText(detail.carePlan.summary)} />
+                              <p className="risk-next"><Target size={13} />{detail.carePlan.next_step}</p>
+
+                              <h4><Brain size={13} />Agent Execution Audit Log</h4>
+                              <ul className="event-log">
+                                {detail.eventLog.map((e, i) => (
+                                  <li key={i}><span className="event-time">{e.time}</span><strong>{e.agent}</strong><span>{e.note}</span></li>
+                                ))}
+                              </ul>
+                            </>
+                          ) : (
+                            <p className="muted-sm" style={{ color: "var(--md-ink-muted)", fontSize: "12.5px" }}>No longitudinal data recorded for this patient yet.</p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </section>
+                </div>
               </div>
-            </div>
+            )
           )}
         </main>
       </div>
