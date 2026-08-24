@@ -1,6 +1,6 @@
 import React from "react";
 
-const STATUS_COLOR = { HIGH: "#F5A6C2", LOW: "#F6C453", NORMAL: "#8FD6C4", UNSPECIFIED: "#C9B8EA" };
+const STATUS_COLOR = { HIGH: "#E7A1A8", LOW: "#F4CE45", NORMAL: "#3F8F87", UNSPECIFIED: "#BAA8E4" };
 
 /** Renders a horizontal bar per biomarker, colored by status, with the
  * numeric value labeled. Purely illustrative (not to clinical scale —
@@ -25,7 +25,7 @@ export default function LabReportChart({ metrics = [] }) {
         .lab-chart-label{ font-size:12.5px; color:var(--ink-soft,#6B5A8E); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .lab-chart-track{ background:#F0E9FF; border-radius:8px; height:14px; overflow:hidden; }
         .lab-chart-fill{ height:100%; border-radius:8px; transition: width .6s cubic-bezier(.2,.8,.2,1); }
-        .lab-chart-value{ font-size:12px; font-weight:700; color:var(--deep-violet,#3B2159); text-align:right; }
+        .lab-chart-value{ font-size:12px; font-weight:700; color:var(--deep-violet,#34205F); text-align:right; }
         .lab-chart-legend{ display:flex; gap:14px; font-size:11px; color:var(--ink-soft,#6B5A8E); margin-top:2px; }
         .lab-chart-legend span{ display:inline-flex; align-items:center; gap:5px; }
         .legend-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }

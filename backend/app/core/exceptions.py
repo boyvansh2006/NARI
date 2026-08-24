@@ -41,3 +41,23 @@ class VoiceServiceError(NARIError):
 class EmptyTranscriptError(NARIError):
     status_code = 400
     default_detail = "No speech was detected in that recording"
+
+
+class InvalidCredentialsError(NARIError):
+    status_code = 401
+    default_detail = "Incorrect email or password"
+
+
+class EmailAlreadyRegisteredError(NARIError):
+    status_code = 409
+    default_detail = "An account with this email already exists"
+
+
+class InvalidOrExpiredTokenError(NARIError):
+    status_code = 400
+    default_detail = "This link is invalid or has expired - please request a new one"
+
+
+class ReminderNotFoundError(NARIError):
+    status_code = 404
+    default_detail = "Reminder not found"

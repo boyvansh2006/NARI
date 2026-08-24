@@ -1,24 +1,17 @@
 """
 Lab report / document intelligence pipeline.
 
-This is Vitalis's (IBMIE) parser_service.py, reused near-verbatim for the
-PDF-text-extraction -> OCR-fallback -> LLM-structuring flow, with two
-changes for NARI:
-
-  1. NARI's report dropzone accepts "image/*,.pdf" (a phone photo of a
-     report, not just a scanned PDF) - extract_document_text() now branches
-     on document kind instead of assuming PDF.
-  2. If no GROQ_API_KEY is configured, parse_medical_document() no longer
-     raises - it degrades to returning the raw OCR/extracted text as a
-     single unstructured metric, so the upload pipeline still works
-     end-to-end for local/offline development (mirrors MAITRI's "degrade
-     gracefully, warn loudly" philosophy rather than the original's hard
-     failure on a missing key).
+This implements the PDF-text-extraction -> OCR-fallback -> LLM-structuring flow:
+  1. Accepts "image/*,.pdf" (a phone photo of a report, scanned PDF, or digital PDF).
+  2. Uses PyTesseract with local tessdata fallback for OCR on image documents.
+  3. Uses PdfReader / pdfplumber for native PDF text & positioned table extraction.
+  4. Parses extracted biomarkers using Gemini / Groq / OpenAI LLM structuring or local regex fallback.
 """
 from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -49,10 +42,6 @@ SYSTEM_PROMPT = (
 
 DocumentKind = Literal["pdf", "image"]
 
-# The local extractor makes uploaded reports useful even when a cloud LLM
-# is deliberately not configured. It handles common lab-report rows such as
-# "Hemoglobin 11.2 g/dL Low" and preserves unknown tests rather than only
-# extracting a small hand-picked biomarker set.
 METRIC_LINE_PATTERN = re.compile(
     r"^\s*(?P<name>[A-Za-z][A-Za-z0-9 ()/._%+-]{1,80}?)\s*(?:[:=]|\s+)\s*"
     r"(?P<value>[<>≤≥]?\s*\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?|"
@@ -60,9 +49,15 @@ METRIC_LINE_PATTERN = re.compile(
     r"(?:\s+(?P<unit>[A-Za-zµμ/%^0-9.×x*/-]{1,24}))?\s*(?P<tail>.*)$",
     re.IGNORECASE,
 )
-REFERENCE_RANGE_PATTERN = re.compile(r"(?:ref(?:erence)?\s*(?:range)?\s*[:=]?)?\s*(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)", re.IGNORECASE)
+REFERENCE_RANGE_PATTERN = re.compile(
+    r"(?:ref(?:erence)?\s*(?:range)?\s*[:=]?)?\s*(\d+(?:[.,]\d+)?)\s*[-–]\s*(\d+(?:[.,]\d+)?)",
+    re.IGNORECASE,
+)
 FLAG_PATTERN = re.compile(r"\b(high|low|normal|h|l|n)\b", re.IGNORECASE)
-NON_METRIC_LABELS = {"test", "test name", "investigation", "result", "results", "parameter", "units", "reference range", "bio reference range"}
+NON_METRIC_LABELS = {
+    "test", "test name", "investigation", "result", "results", "parameter",
+    "units", "reference range", "bio reference range"
+}
 NUMERIC_RESULT_PATTERN = re.compile(r"^[<>≤≥]?\s*\d+(?:[.,]\d+)?$")
 
 
@@ -119,11 +114,20 @@ class ParserService:
             raise ParserServiceError(str(exc)) from exc
 
 
-def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
-    path = Path(file_path)
+def _configure_tesseract():
     settings = get_settings()
     if settings.tesseract_cmd:
         pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd
+
+    # Ensure TESSDATA_PREFIX points to valid traineddata directory
+    local_tessdata = Path(__file__).resolve().parents[2] / "tessdata"
+    if local_tessdata.exists() and (local_tessdata / "eng.traineddata").exists():
+        os.environ["TESSDATA_PREFIX"] = str(local_tessdata)
+
+
+def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
+    path = Path(file_path)
+    _configure_tesseract()
 
     if kind == "image":
         try:
@@ -131,10 +135,9 @@ def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
                 return pytesseract.image_to_string(img).strip()
         except Exception as exc:
             LOGGER.error(f"OCR failed on image {path.name}: {exc}")
-            raise ValueError("Failed to run OCR on the uploaded image.") from exc
+            raise ValueError(f"Failed to run OCR on the uploaded image: {exc}") from exc
 
-    # PDF: try native text layer first, fall back to OCR for scanned PDFs -
-    # unchanged from Vitalis's extract_pdf_text().
+    # PDF: try native text layer first, fall back to OCR for scanned PDFs
     reader = PdfReader(str(path))
     pages: list[str] = []
     for page in reader.pages:
@@ -153,6 +156,7 @@ def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
     ocr_pages: list[str] = []
     try:
         file_bytes = path.read_bytes()
+        settings = get_settings()
         images = convert_from_bytes(file_bytes, dpi=200, poppler_path=settings.poppler_path or None)
         for i, image in enumerate(images):
             page_text = pytesseract.image_to_string(image)
@@ -160,13 +164,12 @@ def extract_document_text(file_path: str | Path, kind: DocumentKind) -> str:
                 ocr_pages.append(f"--- Page {i + 1} ---\n{page_text.strip()}")
     except Exception as exc:
         LOGGER.error(f"OCR execution error while processing {path.name}: {exc}")
-        raise ValueError("Failed to process scanned document text layers.") from exc
+        raise ValueError(f"Failed to process scanned document text layers: {exc}") from exc
 
     return "\n\n".join(ocr_pages).strip()
 
 
 def _group_words_by_line(words: list[dict[str, Any]], tolerance: float = 3.0) -> list[list[dict[str, Any]]]:
-    """Group positioned PDF words into visual lines, preserving column order."""
     lines: list[list[dict[str, Any]]] = []
     for word in sorted(words, key=lambda item: (float(item["top"]), float(item["x0"]))):
         if not lines or abs(float(lines[-1][0]["top"]) - float(word["top"])) > tolerance:
@@ -181,7 +184,6 @@ def _joined(words: list[dict[str, Any]]) -> str:
 
 
 def _table_layout(lines: list[list[dict[str, Any]]]) -> tuple[float, float, float, float] | None:
-    """Find a conventional lab-table header such as Test Name | Results | Units | Reference Range."""
     for line in lines:
         labels = [(word["text"].lower().strip(".:"), float(word["x0"]), float(word["top"])) for word in line]
         result = next((item for item in labels if item[0].startswith("result")), None)
@@ -193,7 +195,6 @@ def _table_layout(lines: list[list[dict[str, Any]]]) -> tuple[float, float, floa
 
 
 def extract_pdf_table_metrics(file_path: str | Path) -> list[dict[str, Any]]:
-    """Extract native PDF lab tables using their printed column positions."""
     metrics: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str | None]] = set()
     active_layout: tuple[float, float, float] | None = None
@@ -279,11 +280,6 @@ def _status_from_tail(value: str, tail: str) -> str:
 
 
 def extract_metrics_locally(report_text: str) -> list[dict[str, Any]]:
-    """Best-effort structured extraction for text-layer PDFs and OCR output.
-
-    It intentionally avoids medical reference assumptions. A value is only
-    flagged when the report itself provides a flag or a numeric reference range.
-    """
     metrics: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str | None]] = set()
     for raw_line in report_text.splitlines():
@@ -297,8 +293,6 @@ def extract_metrics_locally(report_text: str) -> list[dict[str, Any]]:
         value = re.sub(r"\s+", " ", match.group("value")).strip()
         unit = (match.group("unit") or "").strip() or None
         tail = match.group("tail") or ""
-        # A bare number after the result is much more likely to be the start
-        # of a reference range than a unit (e.g. "Ferritin 9 15 - 150").
         if unit and re.fullmatch(r"\d+(?:[.,]\d+)?", unit):
             tail = f"{unit} {tail}".strip()
             unit = None
@@ -359,8 +353,6 @@ def call_groq(report_text: str, api_key: str, model: str, timeout: float = 120.0
 
 
 def normalize_groq_output(content: str) -> dict[str, Any]:
-    """Unchanged from Vitalis - tolerates a couple of different shapes the
-    LLM might return and normalizes them into our schema."""
     raw = json.loads(content)
 
     if isinstance(raw, dict) and "metrics" in raw and isinstance(raw["metrics"], list):
@@ -423,23 +415,39 @@ def parse_medical_document(file_path: str | Path, kind: DocumentKind) -> LabRepo
     if not report_text:
         raise ValueError("No readable text was extracted from the document")
 
-    # Prefer the report's visual table structure when it exists. This avoids
-    # pypdf's column-interleaving issue on multi-page pathology reports.
+    # Prefer the report's visual table structure when it exists for digital PDFs
     if kind == "pdf":
         table_metrics = extract_pdf_table_metrics(path)
         if table_metrics:
             LOGGER.info("Extracted structured metrics from positioned PDF table", extra={"metrics_found": len(table_metrics)})
             return LabReportExtractionSchema(patient_demographics_found=False, metrics=table_metrics)
 
-    if not settings.groq_api_key:
-        metrics = extract_metrics_locally(report_text)
-        LOGGER.info("GROQ_API_KEY not set - used local structured lab extraction", extra={"metrics_found": len(metrics)})
-        return LabReportExtractionSchema(
-            patient_demographics_found=False,
-            metrics=metrics,
+    if settings.groq_api_key:
+        content = call_groq(
+            report_text, settings.groq_api_key, settings.groq_model, timeout=settings.request_timeout_seconds
         )
+        return LabReportExtractionSchema.model_validate(normalize_groq_output(content))
 
-    content = call_groq(
-        report_text, settings.groq_api_key, settings.groq_model, timeout=settings.request_timeout_seconds
+    # If Gemini is configured in .env, use complete_json
+    from app.services.llm_client import LLMMessage, complete_json
+    if settings.gemini_api_key or settings.openai_api_key:
+        try:
+            prompt = (
+                "You are an expert clinical data parsing engine for women's health lab reports.\n"
+                "Extract every medical test, biomarker, and health metric present in the document text.\n"
+                'Return strictly as JSON matching this schema: {"patient_demographics_found": boolean, '
+                '"metrics": [{"biomarker_name": string, "extracted_abbreviation": string|null, '
+                '"value": string, "unit": string|null, "status": "NORMAL"|"HIGH"|"LOW"|"UNSPECIFIED"}]}'
+            )
+            raw = complete_json(prompt, [LLMMessage("user", f"Document text:\n{report_text}")])
+            if raw and "metrics" in raw and isinstance(raw["metrics"], list) and len(raw["metrics"]) > 0:
+                return LabReportExtractionSchema.model_validate(normalize_groq_output(json.dumps(raw)))
+        except Exception as exc:
+            LOGGER.warning(f"LLM extraction fallback to local regex: {exc}")
+
+    metrics = extract_metrics_locally(report_text)
+    LOGGER.info("Used local structured lab extraction", extra={"metrics_found": len(metrics)})
+    return LabReportExtractionSchema(
+        patient_demographics_found=False,
+        metrics=metrics,
     )
-    return LabReportExtractionSchema.model_validate(normalize_groq_output(content))

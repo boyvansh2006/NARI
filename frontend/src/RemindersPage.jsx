@@ -173,7 +173,7 @@ export default function RemindersPage({ onTaken, isGuest }) {
           border:none; border-radius:100px; padding:9px 16px; font-family:var(--font-head); font-weight:600; font-size:12.5px;
         }
         .rem-add-btn{
-          display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg,var(--primary-purple),#5D3FB5);
+          display:inline-flex; align-items:center; gap:8px; background:linear-gradient(135deg,var(--primary-purple),#34205F);
           color:#fff; border:none; border-radius:100px; padding:12px 20px; font-family:var(--font-head); font-weight:600;
           font-size:13.5px; box-shadow:var(--shadow-soft); transition:transform .18s ease;
         }

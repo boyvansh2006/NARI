@@ -107,13 +107,50 @@ const SUGGESTED_PROMPTS = [
   "Book a doctor appointment",
 ];
 
-const INITIAL_NOTIFICATIONS = [
-  { id: 1, text: "Your ferritin trend needs review", time: "2h ago", unread: true },
-  { id: 2, text: "Time to log today's symptoms", time: "5h ago", unread: true },
-  { id: 3, text: "Appointment reminder: Dr. Mehta tomorrow at 10:00 AM", time: "1d ago", unread: false },
-];
+const INITIAL_NOTIFICATIONS = [];
 
 const DEMO_PROFILE = { full_name: "Ananya", cycle_day: 18, cycle_phase: "Luteal phase" };
+
+// NARI is built for women's health, so the assistant's spoken voice should
+// read as female whenever server-side Piper TTS isn't configured and the
+// browser's own speechSynthesis is used instead. The previous logic just
+// grabbed the first "en" voice the platform reported, which - depending on
+// OS/browser voice ordering - often ended up male (e.g. "Microsoft David",
+// "Google UK English Male", "Daniel"). SpeechSynthesisVoice doesn't expose
+// a real gender field, so this uses known voice names as a heuristic:
+// prefer an explicitly female-labelled voice, then a well-known female
+// voice by name, then fall back to any English voice that isn't a
+// well-known male voice, before finally giving up and letting the browser
+// use its own default.
+const KNOWN_FEMALE_VOICE_NAMES = [
+  "zira", "samantha", "victoria", "karen", "moira", "tessa", "fiona", "susan",
+  "google us english", "google uk english female", "kathy", "veena", "lekha",
+  "aria", "jenny", "libby", "emma",
+];
+const KNOWN_MALE_VOICE_NAMES = [
+  "david", "mark", "guy", "daniel", "alex", "fred", "google uk english male",
+  "james", "ravi", "arthur", "eric", "george",
+];
+
+function pickFemaleVoice(voices) {
+  const englishVoices = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith("en"));
+  const pool = englishVoices.length > 0 ? englishVoices : voices;
+
+  const explicitlyFemale = pool.find((v) => /female/i.test(v.name));
+  if (explicitlyFemale) return explicitlyFemale;
+
+  const knownFemale = pool.find((v) =>
+    KNOWN_FEMALE_VOICE_NAMES.some((name) => v.name.toLowerCase().includes(name))
+  );
+  if (knownFemale) return knownFemale;
+
+  const notKnownMale = pool.find(
+    (v) =>
+      !/male/i.test(v.name) &&
+      !KNOWN_MALE_VOICE_NAMES.some((name) => v.name.toLowerCase().includes(name))
+  );
+  return notKnownMale || pool[0] || voices[0] || null;
+}
 
 const STATUS_TO_FLAG = { NORMAL: "normal", HIGH: "high", LOW: "low", UNSPECIFIED: "flagged" };
 
@@ -138,6 +175,40 @@ function loadSession() {
     return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Defensive safety net for care-plan text. The symptom/lab/nutrition agents are
+ * instructed to always reply in plain markdown, but if a model ever slips and
+ * returns a stringified Python-style dict (e.g. "{'gastrointestinal': ['...', '...'],
+ * 'gynecological': [...]}") instead of prose, this converts it into clean
+ * markdown headers + bullets instead of dumping the raw braces/quotes on screen.
+ * Anything that isn't recognizably dict-like is returned unchanged.
+ */
+function cleanCarePlanText(text) {
+  if (!text) return text;
+  const trimmed = text.trim();
+  const looksLikeStringifiedDict = /^\{[\s\S]*\}$/.test(trimmed) && /'[^']+'\s*:\s*\[/.test(trimmed);
+  if (!looksLikeStringifiedDict) return text;
+
+  try {
+    // Normalize Python-dict syntax (single quotes) into JSON so it can be parsed safely.
+    const asJson = trimmed
+      .replace(/'/g, '"')
+      .replace(/"(s|d)"/g, "'$1'"); // guard against breaking contractions like it's/don't (rare in this content)
+    const parsed = JSON.parse(asJson);
+    const titleCase = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+    const lines = [];
+    Object.entries(parsed).forEach(([section, items]) => {
+      lines.push(`## ${titleCase(section)}`);
+      (Array.isArray(items) ? items : [items]).forEach((item) => lines.push(`- ${item}`));
+    });
+    return lines.join("\n");
+  } catch {
+    // If parsing fails for any reason, fall back to the original text rather than erroring.
+    return text;
   }
 }
 
@@ -213,6 +284,77 @@ function FormattedMessage({ text }) {
   return <div className="chat-formatted-body">{elements}</div>;
 }
 
+function GuestNameGate({ value, onChange, onConfirm, onCancel }) {
+  return (
+    <div className="guest-gate-shell">
+      <style>{`
+        .guest-gate-shell{
+          min-height:100vh; display:flex; align-items:center; justify-content:center;
+          background:linear-gradient(160deg,#34205F 0%,#694CD0 65%,#E1C3FF 130%);
+          font-family:'DM Sans',-apple-system,sans-serif; padding:24px;
+        }
+        /* box-sizing:border-box was missing here, so width:100% + padding on
+           .guest-gate-input pushed it past the card's edge while the
+           buttons below (padding:14px 0, no horizontal padding) stayed
+           flush — that's what read as "off-center" / boundary overflow. */
+        .guest-gate-shell *{ box-sizing:border-box; }
+        .guest-gate-card{
+          background:#fff; border-radius:20px; padding:36px 34px; width:100%; max-width:380px;
+          box-shadow:0 30px 60px rgba(19,14,45,0.45); text-align:center; animation: guest-rise .35s ease;
+          border:1.5px solid rgba(52,31,96,0.06);
+        }
+        @keyframes guest-rise{ from{opacity:0; transform:translateY(14px);} to{opacity:1; transform:translateY(0);} }
+        .guest-gate-mark{
+          width:56px;height:56px;border-radius:50%; margin:0 auto 18px;
+          background:radial-gradient(circle at 35% 30%,#fff,#E7A1A8 60%,#694CD0);
+          box-shadow:0 0 0 8px rgba(105,76,208,0.1);
+        }
+        .guest-gate-card h2{
+          font-family:'Sora',sans-serif; font-size:24px; font-weight:800; color:#34205F; margin:0 0 8px;
+        }
+        .guest-gate-card p{ color:#6B5A8E; font-size:13.5px; line-height:1.6; margin:0 0 22px; }
+        .guest-gate-input{
+          width:100%; border:1.5px solid rgba(52,31,96,0.14); border-radius:12px; padding:13px 15px;
+          font-size:14px; font-family:inherit; outline:none; margin-bottom:18px; text-align:center;
+          transition:border-color .2s ease, box-shadow .2s ease;
+        }
+        .guest-gate-input:focus{ border-color:#694CD0; box-shadow:0 0 0 4px rgba(105,76,208,0.12); }
+        .guest-gate-actions{ display:flex; flex-direction:column; gap:10px; }
+        .guest-gate-confirm{
+          width:100%; background:linear-gradient(120deg,#694CD0,#34205F); color:#fff; border:none; border-radius:12px;
+          padding:14px 0; font-family:'Sora',sans-serif; font-weight:800; font-size:15.5px;
+          cursor:pointer; transition:transform .15s ease, box-shadow .15s ease;
+        }
+        .guest-gate-confirm:hover{ transform:translateY(-2px); box-shadow:0 14px 28px rgba(105,76,208,0.32); }
+        .guest-gate-back{
+          width:100%; background:none; border:none; color:#8578AE; font-size:13px; font-weight:600; cursor:pointer;
+          padding:6px 0;
+        }
+        .guest-gate-note{ font-size:11.5px; color:#A89BD2; margin-top:16px; }
+      `}</style>
+      <div className="guest-gate-card">
+        <div className="guest-gate-mark" />
+        <h2>What should we call you?</h2>
+        <p>Guest sessions aren't saved to an account, but we'll still use this to personalize your dashboard.</p>
+        <input
+          className="guest-gate-input"
+          placeholder="e.g. Priya (optional)"
+          value={value}
+          autoFocus
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onConfirm()}
+          maxLength={40}
+        />
+        <div className="guest-gate-actions">
+          <button className="guest-gate-confirm" onClick={onConfirm}>Continue to dashboard</button>
+          <button className="guest-gate-back" onClick={onCancel}>Back</button>
+        </div>
+        <p className="guest-gate-note">Nothing you enter here is sent anywhere or saved once you close this tab.</p>
+      </div>
+    </div>
+  );
+}
+
 export default function NARIApp() {
   const [view, setView] = useState(() => (loadSession() ? "dashboard" : "landing"));
   const [user, setUser] = useState(() => loadSession());
@@ -254,21 +396,20 @@ export default function NARIApp() {
 
   const [selectedPatientId, setSelectedPatientId] = useState("p1");
 
-  useEffect(() => {
-    const l1 = document.createElement("link");
-    l1.rel = "preconnect";
-    l1.href = "https://fonts.googleapis.com";
-    const l2 = document.createElement("link");
-    l2.rel = "stylesheet";
-    l2.href =
-      "https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap";
-    document.head.appendChild(l1);
-    document.head.appendChild(l2);
-    return () => {
-      l1.remove();
-      l2.remove();
-    };
-  }, []);
+  // Guest mode used to drop straight into the dashboard as an anonymous
+  // "Guest" with no way to personalize the session. Both entry points
+  // (landing page + login page) now route through this small name-capture
+  // gate first, so the dashboard can greet the person by name and label
+  // their own session's data instead of always saying "Guest".
+  const [pendingGuestEntry, setPendingGuestEntry] = useState(false);
+  const [guestNameDraft, setGuestNameDraft] = useState("");
+
+  const confirmGuestEntry = () => {
+    const name = guestNameDraft.trim();
+    enterDashboard({ guest: true, fullName: name || "Guest" });
+    setPendingGuestEntry(false);
+    setGuestNameDraft("");
+  };
 
   useEffect(() => {
     if (view !== "dashboard") return;
@@ -348,11 +489,9 @@ export default function NARIApp() {
         u.rate = 1.0;
         u.pitch = 1.0;
         const voices = window.speechSynthesis.getVoices() || [];
-        const englishVoice =
-          voices.find((v) => v.lang && v.lang.startsWith("en") && !v.name.includes("whisper")) ||
-          voices[0];
-        if (englishVoice) {
-          u.voice = englishVoice;
+        const preferredVoice = pickFemaleVoice(voices);
+        if (preferredVoice) {
+          u.voice = preferredVoice;
         }
         u.onerror = (e) => {
           console.warn("Speech synthesis warning:", e);
@@ -453,7 +592,7 @@ export default function NARIApp() {
     setInput("");
     setIsTyping(true);
     try {
-      const res = await sendChatMessage(text, recentHistoryPayload(), DEMO_PROFILE);
+      const res = await sendChatMessage(text, recentHistoryPayload(), { ...DEMO_PROFILE, full_name: displayName });
       setMessages((prev) => [
         ...prev,
         {
@@ -618,12 +757,23 @@ export default function NARIApp() {
     setView("landing");
   };
 
+  if (pendingGuestEntry) {
+    return (
+      <GuestNameGate
+        value={guestNameDraft}
+        onChange={setGuestNameDraft}
+        onConfirm={confirmGuestEntry}
+        onCancel={() => setPendingGuestEntry(false)}
+      />
+    );
+  }
+
   if (view === "landing") {
     return (
       <LandingPage
         onGetStarted={() => setView("login")}
         onSignIn={() => setView("login")}
-        onGuest={() => enterDashboard({ guest: true })}
+        onGuest={() => setPendingGuestEntry(true)}
       />
     );
   }
@@ -632,43 +782,47 @@ export default function NARIApp() {
     return (
       <LoginPage
         onSignIn={(u) => enterDashboard(u)}
-        onGuest={() => enterDashboard({ guest: true })}
+        onGuest={() => setPendingGuestEntry(true)}
         onBack={() => setView("landing")}
       />
     );
   }
 
-  const displayName = user?.guest ? "Guest" : user?.fullName || (user?.email ? user.email.split("@")[0] : "there");
+  const displayName = user?.guest ? user?.fullName || "Guest" : user?.fullName || (user?.email ? user.email.split("@")[0] : "there");
 
   return (
     <div className="app-shell">
       <style>{`
         :root{
-          --deep-violet:#3B2159;
-          --primary-purple:#7C5CD6;
-          --lavender:#E7CFFF;
-          --warm-cream:#FFF7F0;
-          --health-teal:#8FD6C4;
+          color-scheme: light;
+          --deep-violet:#34205F;
+          --primary-purple:#694CD0;
+          --lavender:#E1C3FF;
+          --warm-cream:#FFF9EF;
+          --health-teal:#3F8F87;
           --soft-rose:#FFD9E4;
-          --rose:#F5A6C2;
-          --gold:#F6C453;
-          --ink:#2C1E40;
+          --rose:#E7A1A8;
+          --gold:#F4CE45;
+          --ink:#22163F;
           --ink-soft:#6B5A8E;
-          --line:rgba(59,33,89,0.08);
+          --line:rgba(52,32,95,0.1);
           --panel:#ffffff;
-          --font-head:'Plus Jakarta Sans',sans-serif;
-          --font-body:'Source Sans 3',sans-serif;
-          --shadow-soft: 0 10px 30px rgba(124,92,214,0.08);
-          --shadow-card: 0 4px 18px rgba(59,33,89,0.05);
-          --gradient-hero: linear-gradient(135deg, #3B2159 0%, #5D3FB5 55%, #7C5CD6 100%);
-          --gradient-blush: linear-gradient(135deg, #FFF7F0 0%, #FEEBF1 50%, #F0E9FF 100%);
+          --font-head:'Sora',sans-serif;
+          --font-body:'DM Sans',-apple-system,sans-serif;
+          --shadow-soft: 0 16px 40px rgba(52,32,95,0.12);
+          --shadow-card: 0 4px 18px rgba(52,32,95,0.06);
+          --gradient-hero: linear-gradient(135deg, var(--deep-violet) 0%, var(--primary-purple) 100%);
+          --gradient-blush: linear-gradient(135deg, #FFF9EF 0%, #FEEBF1 50%, #F0E9FF 100%);
+          --mint: var(--health-teal);
         }
+        .app-shell{ color-scheme: light; }
+        .app-shell button, .app-shell input, .app-shell select, .app-shell a{ color-scheme: light; }
         .app-shell *{box-sizing:border-box;}
         .app-shell{
           display:flex; min-height:100vh; background:var(--warm-cream); color:var(--ink);
           font-family:var(--font-body); font-size:15px;
         }
-        .app-shell h1,.app-shell h2,.app-shell h3,.app-shell h4{font-family:var(--font-head);color:var(--deep-violet);margin:0;}
+        .app-shell h1,.app-shell h2,.app-shell h3,.app-shell h4{font-family:var(--font-head);font-weight:800;letter-spacing:-0.01em;color:var(--deep-violet);margin:0;}
         .app-shell a{text-decoration:none;color:inherit;}
         .app-shell button{font-family:inherit;cursor:pointer;}
         .app-shell ul{list-style:none;margin:0;padding:0;}
@@ -681,7 +835,7 @@ export default function NARIApp() {
         .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-head);font-weight:800;font-size:20px;padding:0 8px 30px;color:var(--deep-violet);}
         .brand-mark{
           width:28px;height:28px;border-radius:50%;
-          background:radial-gradient(circle at 35% 30%,#fff,#F5A6C2 55%,#7C5CD6);
+          background:radial-gradient(circle at 35% 30%,#fff,#E7A1A8 55%,#694CD0);
           box-shadow:0 0 0 4px rgba(245,166,194,0.3);flex-shrink:0;
         }
         .sidebar-nav{display:flex;flex-direction:column;gap:5px;flex:1;}
@@ -691,12 +845,14 @@ export default function NARIApp() {
           transition:all .2s cubic-bezier(.2,.8,.2,1);
         }
         .nav-item:hover{background:var(--warm-cream);color:var(--deep-violet);transform:translateX(3px);}
-        .nav-item.active{background:linear-gradient(120deg,#7C5CD6,#5D3FB5);color:#fff;box-shadow:0 8px 20px rgba(124,92,214,0.28);}
+        .nav-item.active{background:linear-gradient(120deg,#694CD0,#34205F);color:#fff;box-shadow:0 8px 20px rgba(105,76,208,0.28);}
+        .nav-section-label{padding:14px 14px 4px;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);opacity:0.6;}
+        .nav-item-secondary{font-size:12.5px;padding:9px 14px;opacity:0.85;}
         .sidebar-foot{border-top:1px solid var(--line);padding-top:18px;margin-top:12px;display:flex;flex-direction:column;gap:12px;}
         .user-chip{display:flex;align-items:center;gap:11px;}
         .user-avatar{
           width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--rose),var(--primary-purple));
-          display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px rgba(124,92,214,0.25);
+          display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 4px 10px rgba(105,76,208,0.25);
         }
         .user-name{font-family:var(--font-head);font-weight:700;font-size:13.5px;color:var(--deep-violet);}
         .user-sub{font-size:11.5px;color:var(--ink-soft);}
@@ -736,7 +892,7 @@ export default function NARIApp() {
         .notif-backdrop{position:fixed;inset:0;z-index:20;}
         .notif-panel{
           position:absolute;top:50px;right:0;width:330px;background:#fff;border:none;
-          border-radius:20px;box-shadow:0 22px 50px rgba(59,33,89,0.18);z-index:21;overflow:hidden;
+          border-radius:20px;box-shadow:0 22px 50px rgba(52,31,96,0.18);z-index:21;overflow:hidden;
         }
         .notif-panel-head{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--line);font-family:var(--font-head);font-weight:700;font-size:14px;color:var(--deep-violet);}
         .notif-panel-head button{background:none;border:none;color:var(--ink-soft);}
@@ -754,21 +910,29 @@ export default function NARIApp() {
         .toast{
           position:fixed;bottom:26px;right:26px;background:var(--deep-violet);color:#fff;
           padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:10px;
-          font-size:13.5px;box-shadow:0 18px 40px rgba(59,33,89,0.32);z-index:30;animation:rise .25s ease;
+          font-size:13.5px;box-shadow:0 18px 40px rgba(52,31,96,0.32);z-index:30;animation:rise .25s ease;
         }
         @keyframes rise{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 
         .welcome-card{
-          background:var(--gradient-hero);color:#fff;border-radius:24px;
+          background:
+            radial-gradient(circle at 85% 15%, rgba(245,166,194,0.35), transparent 55%),
+            radial-gradient(circle at 8% 90%, rgba(143,214,196,0.22), transparent 50%),
+            var(--gradient-hero);
+          color:#fff;border-radius:24px;
           padding:34px 38px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:22px;margin-bottom:28px;
           box-shadow:var(--shadow-soft);position:relative;overflow:hidden;
         }
         .welcome-card::before{
-          content:''; position:absolute; right:-50px; top:-50px; width:220px; height:220px; border-radius:50%;
-          background:radial-gradient(circle,#F5A6C2 0%,transparent 70%); opacity:0.25; pointer-events:none;
+          content:''; position:absolute; right:-60px; top:-70px; width:260px; height:260px; border-radius:50%;
+          background:radial-gradient(circle,#E7A1A8 0%,transparent 70%); opacity:0.3; pointer-events:none; filter:blur(6px);
+        }
+        .welcome-card::after{
+          content:''; position:absolute; left:-40px; bottom:-60px; width:200px; height:200px; border-radius:50%;
+          background:radial-gradient(circle,#3F8F87 0%,transparent 72%); opacity:0.22; pointer-events:none; filter:blur(6px);
         }
         .eyebrow-sm{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:var(--lavender);margin:0 0 6px;}
-        .welcome-card h1{color:#fff;font-size:26px;font-weight:800;}
+        .welcome-card h1{color:#fff;font-size:26px;font-weight:800;position:relative;z-index:1;}
         .muted{color:rgba(255,247,240,0.82);font-size:14px;margin-top:6px;}
         .quick-actions{display:flex;gap:10px;flex-wrap:wrap;position:relative;z-index:1;}
         .qa-btn{
@@ -777,7 +941,7 @@ export default function NARIApp() {
           box-shadow:0 4px 14px rgba(0,0,0,0.08);transition:transform .18s ease, box-shadow .18s ease;
         }
         .qa-btn:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(0,0,0,0.14);}
-        .qa-btn.primary{background:linear-gradient(135deg,#F5A6C2,#F6C453);color:#3B2159;}
+        .qa-btn.primary{background:linear-gradient(135deg,#E7A1A8,#F4CE45);color:#34205F;}
 
         .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-bottom:28px;}
         .stat-card{
@@ -817,7 +981,7 @@ export default function NARIApp() {
         .agent-tag{font-family:var(--font-head);font-weight:700;font-size:11px;letter-spacing:0.06em;text-transform:uppercase;color:var(--primary-purple);margin-bottom:6px;padding-left:4px;}
         .bubble{padding:14px 18px;border-radius:20px;font-size:14.5px;line-height:1.65; animation: bubble-in .25s ease; position:relative;}
         @keyframes bubble-in{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
-        .bubble.user{background:linear-gradient(135deg,var(--primary-purple),#5D3FB5);color:#fff;border-bottom-right-radius:6px;white-space:pre-wrap;}
+        .bubble.user{background:linear-gradient(135deg,var(--primary-purple),#34205F);color:#fff;border-bottom-right-radius:6px;white-space:pre-wrap;}
         .bubble.assistant{background:var(--gradient-blush);color:var(--ink);border-bottom-left-radius:6px;}
         .bubble.assistant.urgent{background:#FBE0E5;color:#6b1f27;border:1.5px solid var(--rose);}
         
@@ -827,9 +991,9 @@ export default function NARIApp() {
         .chat-bullet-list{margin:4px 0 8px;padding-left:18px;display:flex;flex-direction:column;gap:6px;list-style:disc;}
         .chat-bullet-list li{font-size:14px;line-height:1.6;}
         
-        .msg-footer{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed rgba(59,33,89,0.12);}
+        .msg-footer{display:flex;align-items:center;gap:8px;margin-top:10px;padding-top:8px;border-top:1px dashed rgba(52,31,96,0.12);}
         .msg-action-btn{display:inline-flex;align-items:center;gap:5px;border:none;background:none;color:var(--ink-soft);font-size:11.5px;font-weight:600;padding:3px 7px;border-radius:6px;cursor:pointer;transition:all .15s ease;}
-        .msg-action-btn:hover{background:rgba(124,92,214,0.12);color:var(--deep-violet);}
+        .msg-action-btn:hover{background:rgba(105,76,208,0.12);color:var(--deep-violet);}
         
         .bubble.typing{display:flex;gap:5px;padding:14px 18px;}
         .bubble.typing span{width:7px;height:7px;border-radius:50%;background:var(--ink-soft);opacity:0.5;animation:blink 1.2s infinite ease-in-out;}
@@ -843,6 +1007,18 @@ export default function NARIApp() {
         .evidence-list{margin-top:8px;display:flex;flex-direction:column;gap:3px;}
         .evidence-item{font-size:11.5px;color:var(--ink-soft);}
         .evidence-item a{color:var(--primary-purple);text-decoration:underline;}
+
+        .expand-panel{margin-top:8px;border:1px solid var(--line);border-radius:10px;background:#FAFAFC;}
+        .expand-panel summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--deep-violet);}
+        .expand-panel summary::-webkit-details-marker{display:none;}
+        .expand-panel summary::after{content:"+";font-size:14px;font-weight:700;color:var(--ink-soft);}
+        .expand-panel[open] summary::after{content:"−";}
+        .expand-panel .expand-body{padding:0 12px 10px;font-size:12px;color:var(--ink-soft);line-height:1.5;}
+        .expand-panel .expand-body ul{margin:0;padding-left:16px;}
+        .expand-panel + .expand-panel{margin-top:6px;}
+
+        .chat-disclaimer{display:flex;align-items:center;gap:6px;padding:6px 22px;font-size:11px;color:var(--ink-soft);background:var(--warm-cream);border-top:1px solid var(--line);}
+        .chat-disclaimer svg{flex-shrink:0;}
         
         .chip-row{display:flex;flex-wrap:wrap;gap:8px;padding:0 22px 14px;}
         .chip{border:none;background:#fff;border-radius:100px;padding:9px 15px;font-size:12.5px;color:var(--deep-violet);font-weight:600;box-shadow:var(--shadow-soft);transition:transform .18s ease, background .18s ease;}
@@ -857,8 +1033,8 @@ export default function NARIApp() {
         @keyframes mic-pulse{0%{box-shadow:0 0 0 0 rgba(245,166,194,0.5);}100%{box-shadow:0 0 0 10px rgba(245,166,194,0);}}
         
         .chat-input{flex:1;border:1.5px solid var(--line);border-radius:100px;padding:12px 20px;font-size:14.5px;font-family:var(--font-body);outline:none;transition:border-color .2s ease, box-shadow .2s ease;}
-        .chat-input:focus{border-color:var(--primary-purple); box-shadow:0 0 0 3px rgba(124,92,214,0.14);}
-        .send-btn{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary-purple),#5D3FB5);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .18s ease;box-shadow:var(--shadow-soft);}
+        .chat-input:focus{border-color:var(--primary-purple); box-shadow:0 0 0 3px rgba(105,76,208,0.14);}
+        .send-btn{width:42px;height:42px;border-radius:50%;background:linear-gradient(135deg,var(--primary-purple),#34205F);color:#fff;border:none;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform .18s ease;box-shadow:var(--shadow-soft);}
         .send-btn:hover{transform:scale(1.08) rotate(6deg);}
 
         .reports-shell{display:flex;flex-direction:column;gap:22px;}
@@ -980,6 +1156,7 @@ export default function NARIApp() {
           .sidebar{width:72px;padding:18px 10px;border-radius:0;}
           .main-col{margin-left:72px;}
           .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{display:none;}
+          .nav-section-label{display:none;}
           .brand{justify-content:center;padding-bottom:20px;}
           .nav-item{justify-content:center;}
           .user-chip{justify-content:center;}
@@ -996,24 +1173,26 @@ export default function NARIApp() {
         <div className="brand"><span className="brand-mark"></span><span>NARI</span></div>
         <nav className="sidebar-nav">
           <a href="#dashboard" onClick={goTo("dashboard")} className={`nav-item ${activePage === "dashboard" ? "active" : ""}`}>
-            <Home size={18} /><span>Dashboard</span>
+            <Home size={18} /><span>Home</span>
           </a>
           <a href="#assistant" onClick={goTo("assistant")} className={`nav-item ${activePage === "assistant" ? "active" : ""}`}>
-            <MessageCircle size={18} /><span>Assistant</span>
+            <MessageCircle size={18} /><span>Ask NARI</span>
           </a>
           <a href="#reports" onClick={goTo("reports")} className={`nav-item ${activePage === "reports" ? "active" : ""}`}>
             <FileText size={18} /><span>Reports</span>
           </a>
           <a href="#twin" onClick={goTo("twin")} className={`nav-item ${activePage === "twin" ? "active" : ""}`}>
-            <HeartPulse size={18} /><span>Health Twin</span>
+            <HeartPulse size={18} /><span>My Health</span>
           </a>
-          <a href="#reminders" onClick={goTo("reminders")} className={`nav-item ${activePage === "reminders" ? "active" : ""}`}>
+
+          <div className="nav-section-label"><span>More</span></div>
+          <a href="#reminders" onClick={goTo("reminders")} className={`nav-item nav-item-secondary ${activePage === "reminders" ? "active" : ""}`}>
             <Pill size={18} /><span>Reminders</span>
           </a>
-          <a href="#activity" onClick={goTo("activity")} className={`nav-item ${activePage === "activity" ? "active" : ""}`}>
+          <a href="#activity" onClick={goTo("activity")} className={`nav-item nav-item-secondary ${activePage === "activity" ? "active" : ""}`}>
             <Activity size={18} /><span>Daily Activity</span>
           </a>
-          <a href="#clinician" onClick={goTo("clinician")} className={`nav-item ${activePage === "clinician" ? "active" : ""}`}>
+          <a href="#clinician" onClick={goTo("clinician")} className={`nav-item nav-item-secondary ${activePage === "clinician" ? "active" : ""}`}>
             <Stethoscope size={18} /><span>Clinician Portal</span>
           </a>
         </nav>
@@ -1054,6 +1233,15 @@ export default function NARIApp() {
                     <button onClick={() => setShowNotifPanel(false)}><X size={15} /></button>
                   </div>
                   <ul>
+                    {notifications.length === 0 && (
+                      <li style={{ cursor: "default" }}>
+                        <span className="dot" style={{ background: "transparent" }}></span>
+                        <div>
+                          <strong>You're all caught up</strong>
+                          <span>Real flags and updates will show up here as you use NARI.</span>
+                        </div>
+                      </li>
+                    )}
                     {notifications.map((n) => (
                       <li key={n.id} className={n.unread ? "unread" : ""} onClick={() => markRead(n.id)}>
                         <span className="dot"></span>
@@ -1083,10 +1271,39 @@ export default function NARIApp() {
               </section>
 
               <section className="stat-grid">
-                <div className="stat-card"><Droplets size={18} className="stat-icon rose" /><div className="stat-label">Cycle day</div><div className="stat-value">Day 18</div><div className="stat-sub">Luteal phase</div></div>
-                <div className="stat-card"><TrendingDown size={18} className="stat-icon teal" /><div className="stat-label">Latest flag</div><div className="stat-value">Ferritin low</div><div className="stat-sub">3rd cycle running</div></div>
-                <div className="stat-card"><Activity size={18} className="stat-icon purple" /><div className="stat-label">Adherence</div><div className="stat-value">86%</div><div className="stat-sub">Missed doses on weekends</div></div>
-                <div className="stat-card"><Calendar size={18} className="stat-icon violet" /><div className="stat-label">Next appointment</div><div className="stat-value">Tomorrow</div><div className="stat-sub">Dr. Mehta, 10:00 AM</div></div>
+                {(() => {
+                  const userTurns = messages.filter((m) => m.sender === "user").length;
+                  const latestRisk = sessionRiskSignals[0];
+                  const latestReport = pastReports[0];
+                  return (
+                    <>
+                      <div className="stat-card">
+                        <MessageCircle size={18} className="stat-icon purple" />
+                        <div className="stat-label">Assistant chats</div>
+                        <div className="stat-value">{userTurns}</div>
+                        <div className="stat-sub">{userTurns === 0 ? "Ask your first question" : "This session"}</div>
+                      </div>
+                      <div className="stat-card">
+                        <TrendingDown size={18} className="stat-icon teal" />
+                        <div className="stat-label">Latest report flag</div>
+                        <div className="stat-value">{latestReport ? latestReport.statusLabel : "None yet"}</div>
+                        <div className="stat-sub">{latestReport ? latestReport.name : "Upload a lab report to see flags"}</div>
+                      </div>
+                      <div className="stat-card">
+                        <AlertTriangle size={18} className="stat-icon rose" />
+                        <div className="stat-label">Risk signals</div>
+                        <div className="stat-value">{sessionRiskSignals.length}</div>
+                        <div className="stat-sub">{latestRisk ? `${latestRisk.domain} pattern (${latestRisk.level})` : "None flagged this session"}</div>
+                      </div>
+                      <div className="stat-card">
+                        <FileText size={18} className="stat-icon violet" />
+                        <div className="stat-label">Reports on file</div>
+                        <div className="stat-value">{pastReports.length}</div>
+                        <div className="stat-sub">{pastReports.length === 0 ? "Nothing uploaded yet" : "In this session"}</div>
+                      </div>
+                    </>
+                  );
+                })()}
               </section>
 
               <section className="pipeline-card">
@@ -1116,12 +1333,50 @@ export default function NARIApp() {
 
               <section className="activity-card">
                 <h3>Recent activity</h3>
-                <ul className="activity-list">
-                  <li><span className="dot rose"></span><div><strong>Logged mild cramps</strong><span>Today, 8:12 AM</span></div></li>
-                  <li><span className="dot teal"></span><div><strong>Lab report scanned — ferritin flagged</strong><span>Yesterday, 6:40 PM</span></div></li>
-                  <li><span className="dot purple"></span><div><strong>Nutrition plan updated for iron intake</strong><span>2 days ago</span></div></li>
-                  <li><span className="dot violet"></span><div><strong>Appointment booked with Dr. Mehta</strong><span>3 days ago</span></div></li>
-                </ul>
+                {(() => {
+                  const items = [];
+                  sessionRiskSignals.slice(0, 3).forEach((r, i) => {
+                    items.push({
+                      key: `risk-${i}`,
+                      dot: "rose",
+                      title: `${r.domain} pattern flagged (${r.level})`,
+                      when: "This session",
+                    });
+                  });
+                  pastReports.slice(0, 3).forEach((r, i) => {
+                    items.push({
+                      key: `report-${i}`,
+                      dot: "teal",
+                      title: `Report scanned — ${r.name}`,
+                      when: r.date,
+                    });
+                  });
+                  if (messages.filter((m) => m.sender === "user").length > 0) {
+                    items.push({
+                      key: "chat",
+                      dot: "purple",
+                      title: "Talked with the NARI assistant",
+                      when: "This session",
+                    });
+                  }
+                  if (items.length === 0) {
+                    return (
+                      <p className="muted-sm">
+                        Nothing logged yet — ask the assistant a question or upload a lab report to see activity here.
+                      </p>
+                    );
+                  }
+                  return (
+                    <ul className="activity-list">
+                      {items.map((it) => (
+                        <li key={it.key}>
+                          <span className={`dot ${it.dot}`}></span>
+                          <div><strong>{it.title}</strong><span>{it.when}</span></div>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
               </section>
             </>
           )}
@@ -1145,6 +1400,11 @@ export default function NARIApp() {
                 </div>
               </div>
 
+              <div className="chat-disclaimer">
+                <Info size={12} />
+                <span>Educational guidance, not a diagnosis. In a medical emergency, contact local emergency services immediately.</span>
+              </div>
+
               <div className="chat-window">
                 {messages.map((m) => (
                   <div key={m.id} className={`msg-row ${m.sender}`}>
@@ -1159,22 +1419,38 @@ export default function NARIApp() {
                       {m.riskSignal && (
                         <div className={`risk-flag risk-${(m.riskSignal.level || "").toLowerCase()}`}>
                           <AlertTriangle size={13} />
-                          <span>{m.riskSignal.domain} pattern flag ({m.riskSignal.level}) — {m.riskSignal.next_step}</span>
+                          <span>{LEVEL_LABEL[m.riskSignal.level] || "Worth a closer look"} — {m.riskSignal.next_step}</span>
                         </div>
                       )}
 
+                      {m.riskSignal && m.riskSignal.factors && m.riskSignal.factors.length > 0 && (
+                        <details className="expand-panel">
+                          <summary>Why was this flagged?</summary>
+                          <div className="expand-body">
+                            <ul>
+                              {m.riskSignal.factors.map((f, i) => <li key={i}>{f}</li>)}
+                            </ul>
+                          </div>
+                        </details>
+                      )}
+
                       {m.evidence && m.evidence.length > 0 && (
-                        <div className="evidence-list">
-                          {m.evidence.slice(0, 2).map((e) => (
-                            <div key={e.chunk_id} className="evidence-item">
-                              Source: {e.source_url ? (
-                                <a href={e.source_url} target="_blank" rel="noreferrer">{e.source_title}</a>
-                              ) : (
-                                e.source_title
-                              )}
+                        <details className="expand-panel">
+                          <summary>Medical evidence</summary>
+                          <div className="expand-body">
+                            <div className="evidence-list">
+                              {m.evidence.slice(0, 3).map((e) => (
+                                <div key={e.chunk_id} className="evidence-item">
+                                  {e.source_url ? (
+                                    <a href={e.source_url} target="_blank" rel="noreferrer">{e.source_title}</a>
+                                  ) : (
+                                    e.source_title
+                                  )}
+                                </div>
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        </details>
                       )}
 
                       {m.sender === "assistant" && (
@@ -1390,7 +1666,7 @@ export default function NARIApp() {
                   <div className="twin-card-head"><ClipboardCheck size={15} /><h3>Care plan</h3></div>
                   {sessionCarePlan ? (
                     <>
-                      <p>{sessionCarePlan.summary}</p>
+                      <FormattedMessage text={cleanCarePlanText(sessionCarePlan.summary)} />
                       {sessionCarePlan.next_step && <p className="risk-next"><Target size={13} />{sessionCarePlan.next_step}</p>}
                       {(sessionCarePlan.evidence || []).length > 0 && (
                         <div className="evidence-list">
@@ -1477,7 +1753,7 @@ export default function NARIApp() {
                             ))}
 
                             <h4><ClipboardCheck size={14} />Care plan</h4>
-                            <p>{detail.carePlan.summary}</p>
+                            <FormattedMessage text={cleanCarePlanText(detail.carePlan.summary)} />
                             <p className="risk-next"><Target size={13} />{detail.carePlan.next_step}</p>
 
                             <h4><Brain size={14} />Agent event log (auditability)</h4>

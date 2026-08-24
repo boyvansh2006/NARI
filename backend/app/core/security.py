@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,13 +24,23 @@ from app.core.exceptions import InvalidDocumentError
 # clinician-dashboard endpoints depend on.
 #
 # This is intentionally minimal - see README "Known gaps" for what a
-# production rollout still needs (refresh tokens, email verification,
-# password reset, rate limiting, MFA).
+# production rollout still needs (email verification, password reset, MFA).
+#
+# SECURITY FIX (audit finding "Auth & Security"): this used to fall back to
+# a fixed "insecure-dev-secret-change-me" string with only a log line if
+# JWT_SECRET_KEY was unset - meaning a misconfigured production deployment
+# would boot "successfully" and sign every session with a secret published
+# in this repo's source code. Now: the dev fallback only applies when
+# ENVIRONMENT is NOT production (see Settings.is_production); main.py's
+# `assert_production_config()` additionally fails app *startup* outright if
+# JWT_SECRET_KEY is unset in production, rather than waiting for this
+# function to be called lazily on the first login/token check.
 # ---------------------------------------------------------------------------
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24h - fine for a demo/hackathon build
+_DEV_ONLY_JWT_SECRET = "insecure-dev-secret-change-me"
 
 
 def hash_password(password: str) -> str:
@@ -41,10 +53,18 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def _jwt_secret() -> str:
     settings = get_settings()
-    # Falls back to a fixed dev secret so the app still boots with zero
-    # configuration (matching the rest of this codebase's philosophy), but
-    # logs loudly - see Settings.jwt_secret_key.
-    return settings.jwt_secret_key or "insecure-dev-secret-change-me"
+    if settings.jwt_secret_key:
+        return settings.jwt_secret_key
+    if settings.is_production:
+        # Defense in depth: main.py's startup check should already have
+        # raised before the app ever accepted a request, but never issue a
+        # token signed with the published dev secret in production even if
+        # that check were somehow bypassed.
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set and ENVIRONMENT=production - refusing to "
+            "sign tokens with the default development secret."
+        )
+    return _DEV_ONLY_JWT_SECRET
 
 
 def create_access_token(subject: uuid.UUID, role: str, extra_claims: dict[str, Any] | None = None) -> str:
@@ -65,6 +85,33 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return jwt.decode(token, _jwt_secret(), algorithms=["HS256"])
     except JWTError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# GGSIPU2617 extension - audit fix ("Single 24h JWT with no refresh flow, no
+# email verification, no password reset"). Opaque, single-use/rotatable
+# tokens for refresh/reset/verify, distinct from the short-lived JWT access
+# token above. The value handed to the client is a high-entropy random
+# string; only its SHA-256 hash is ever persisted, so a leaked DB row alone
+# can't be replayed as a live token (same principle as never storing plain
+# passwords - see hash_password above).
+# ---------------------------------------------------------------------------
+
+REFRESH_TOKEN_EXPIRE_DAYS = 30
+PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = 30
+EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS = 24
+
+
+def generate_opaque_token() -> str:
+    """A URL-safe random token for refresh/reset/verify links. Not a JWT -
+    it carries no claims itself, it's just a lookup key for the hashed row
+    in refresh_tokens/password_reset_tokens/email_verification_tokens."""
+    return secrets.token_urlsafe(32)
+
+
+def hash_opaque_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
 
 ALLOWED_PDF_MIME_TYPES = {"application/pdf", "application/octet-stream"}
 ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/heic"}

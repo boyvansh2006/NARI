@@ -79,6 +79,10 @@ class Settings(BaseModel):
         return [item.strip() for item in self.cors_origins_raw.split(",") if item.strip()]
 
     @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in {"production", "prod"}
+
+    @property
     def uploads_dir(self) -> Path:
         return BACKEND_ROOT / "uploads"
 

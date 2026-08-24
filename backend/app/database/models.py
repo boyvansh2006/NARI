@@ -54,6 +54,17 @@ class Report(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID | None] = mapped_column(GUID(), nullable=True, index=True)
+    # GGSIPU2617 fix: "Guest & Data Isolation (real bug)" - reports uploaded
+    # without auth (user_id=None) previously had no per-guest scoping at
+    # all, so list_reports/get_report/delete_report skipped ownership
+    # filtering entirely for guests and any guest could see/delete any
+    # other guest's report. This column is a client-generated, per-browser
+    # id (see core/deps.py's get_identity, frontend/src/api.js's
+    # getGuestSessionId()) so guest reports are scoped to *a* session even
+    # without a real account, instead of being globally visible. Set to
+    # NULL once claimed by a real account at sign-up (see
+    # report_service.py's claim_guest_reports).
+    guest_session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
     patient_demographics_found: Mapped[bool] = mapped_column(default=False)
@@ -107,6 +118,12 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False, default="")
     # "patient" | "clinician" - see SRAI - Safety Framework's RBAC requirement.
     role: Mapped[str] = mapped_column(String(20), nullable=False, default="patient")
+    # GGSIPU2617 extension - audit fix ("no email verification"). Accounts
+    # start unverified; POST /api/v1/auth/verify-email flips this once the
+    # emailed token is confirmed. Login is still allowed while unverified
+    # (this is a health-info app, not a financial one) but UserRead surfaces
+    # the flag so the frontend can nudge the person to verify.
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
@@ -380,6 +397,29 @@ class MedicationReminder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ChatMessage(Base):
+    """
+    Persisted chat turn (GGSIPU2617 extension - audit fix: "Chat history
+    lives only in React state (useState(INITIAL_MESSAGES)) - refreshing
+    the page wipes the whole conversation even for signed-in users;
+    nothing is persisted server-side"). One row per message (user or
+    assistant), in send order, scoped to the signed-in patient. Only
+    written for authenticated turns - guest chat stays session-only,
+    consistent with the "guest mode: data won't be saved" banner already
+    shown elsewhere in the frontend (RemindersPage.jsx, ActivityTrackerPage.jsx).
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    patient_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), index=True)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    agent: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    urgent: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
+
+
 class DailyActivityLog(Base):
     """One row per patient per calendar day - water, sleep, steps, exercise,
     mood, weight and free-text meals. Mirrors the HealthifyMe-style tracker
@@ -399,3 +439,49 @@ class DailyActivityLog(Base):
     weight: Mapped[str | None] = mapped_column(String(20), nullable=True)
     meals: Mapped[list] = mapped_column(JSON, default=list)  # [{"text": "...", "time": "..."}]
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+# ---------------------------------------------------------------------------
+# GGSIPU2617 extension - audit fix ("Single 24h JWT with no refresh flow, no
+# email verification, no password reset ... Add refresh tokens, forgot-
+# password flow, email verification"). Three short-lived, single-purpose
+# token tables rather than overloading the JWT for all of this:
+#   - RefreshToken: long-lived, opaque, revocable, rotated on every use.
+#   - PasswordResetToken / EmailVerificationToken: single-use, short expiry.
+# Tokens are stored hashed (SHA-256 of the opaque value the user/browser
+# actually holds) so a DB read alone can't be replayed as a live token -
+# see core/security.py's hash_opaque_token().
+# ---------------------------------------------------------------------------
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EmailVerificationToken(Base):
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), index=True, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

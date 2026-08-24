@@ -177,7 +177,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         .meal-form{ display:flex; gap:8px; margin-bottom:12px; }
         .meal-form input{ flex:1; border:1.5px solid var(--line); border-radius:100px; padding:10px 16px; font-size:13.5px; outline:none; }
         .meal-form input:focus{ border-color:var(--primary-purple); }
-        .meal-form button{ background:linear-gradient(135deg,var(--primary-purple),#5D3FB5); color:#fff; border:none; border-radius:50%; width:38px; height:38px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .meal-form button{ background:linear-gradient(135deg,var(--primary-purple),#34205F); color:#fff; border:none; border-radius:50%; width:38px; height:38px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .meal-list{ display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; }
         .meal-item{ display:flex; align-items:center; justify-content:space-between; background:var(--warm-cream); border-radius:12px; padding:9px 13px; font-size:13px; }
         .meal-item span:first-child{ color:var(--ink); }
@@ -211,7 +211,7 @@ export default function ActivityTrackerPage({ isGuest }) {
 
       <div className="act-rings-grid">
         <div className="act-ring-card">
-          <Ring value={day.water} goal={GOALS.water} color="#7C5CD6"><Droplet size={22} color="#7C5CD6" /></Ring>
+          <Ring value={day.water} goal={GOALS.water} color="#694CD0"><Droplet size={22} color="#694CD0" /></Ring>
           <div className="act-ring-label">Water</div>
           <div className="act-ring-value">{day.water} / {GOALS.water} glasses</div>
           <div className="act-ring-controls">
@@ -222,7 +222,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.sleep_hours} goal={GOALS.sleep} color="#F5A6C2"><Moon size={22} color="#F5A6C2" /></Ring>
+          <Ring value={day.sleep_hours} goal={GOALS.sleep} color="#E7A1A8"><Moon size={22} color="#E7A1A8" /></Ring>
           <div className="act-ring-label">Sleep</div>
           <div className="act-ring-value">{day.sleep_hours} / {GOALS.sleep} hrs</div>
           <div className="act-ring-controls">
@@ -233,7 +233,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.steps} goal={GOALS.steps} color="#8FD6C4"><Footprints size={22} color="#3F8F87" /></Ring>
+          <Ring value={day.steps} goal={GOALS.steps} color="#3F8F87"><Footprints size={22} color="#3F8F87" /></Ring>
           <div className="act-ring-label">Steps</div>
           <div className="act-ring-value">{day.steps.toLocaleString()} / {GOALS.steps.toLocaleString()}</div>
           <div className="act-ring-controls">
@@ -244,7 +244,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.exercise_minutes} goal={GOALS.exercise} color="#F6C453"><Dumbbell size={22} color="#B8860B" /></Ring>
+          <Ring value={day.exercise_minutes} goal={GOALS.exercise} color="#F4CE45"><Dumbbell size={22} color="#B8860B" /></Ring>
           <div className="act-ring-label">Exercise</div>
           <div className="act-ring-value">{day.exercise_minutes} / {GOALS.exercise} min</div>
           <div className="act-ring-controls">
@@ -298,7 +298,7 @@ export default function ActivityTrackerPage({ isGuest }) {
               <div className="history-bar-track">
                 <div className="history-bar-fill" style={{
                   height: `${Math.max(6, d.score * 100)}%`,
-                  background: d.isToday ? "linear-gradient(180deg,#7C5CD6,#5D3FB5)" : "linear-gradient(180deg,#E7CFFF,#C9B8EA)",
+                  background: d.isToday ? "linear-gradient(180deg,#694CD0,#34205F)" : "linear-gradient(180deg,#E1C3FF,#BAA8E4)",
                 }} />
               </div>
               <span>{d.label}</span>
