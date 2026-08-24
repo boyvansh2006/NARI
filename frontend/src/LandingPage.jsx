@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   HeartPulse, ArrowRight, ShieldCheck, Lock, Activity,
-  FileText, Watch, Pill, Brain, ClipboardCheck, ChevronRight, Sparkles, Smile
+  FileText, Watch, Pill, Brain, ClipboardCheck, ChevronRight, Sparkles, Smile, Globe
 } from "lucide-react";
+import { SUPPORTED_LANGUAGES } from "./i18n.js";
 
 /** Fades + slides a section up the first time it scrolls into view. */
 function useReveal() {
@@ -314,6 +315,22 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
           <a href="#evidence">Clinical Guidelines</a>
         </div>
         <div className="land-nav-actions">
+          {onLangChange && (
+            <div className="lang-pill-container" style={{ display: "flex", alignItems: "center", gap: "6px", background: "#fff", border: "1px solid var(--md-outline)", borderRadius: "999px", padding: "4px 12px" }}>
+              <Globe size={14} color="var(--md-primary)" />
+              <select
+                value={lang}
+                onChange={(e) => onLangChange(e.target.value)}
+                style={{ border: "none", outline: "none", background: "transparent", fontSize: "12.5px", fontWeight: 700, color: "var(--md-primary)", cursor: "pointer" }}
+              >
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.native} ({l.name})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <button className="land-link-btn" onClick={onSignIn}>Sign In</button>
           <button className="land-cta-btn" onClick={onGetStarted}>
             Get Started <ArrowRight size={14} />

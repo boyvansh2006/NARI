@@ -4,25 +4,17 @@ import {
   Volume2, VolumeX, X, AlertTriangle, CheckCircle2, Activity, Calendar,
   TrendingDown, Droplets, Sparkles, ChevronRight, User, Loader2,
   HeartPulse, Stethoscope, Network, ShieldCheck, ClipboardCheck, BookOpen,
-  Users, Brain, Target, Info, LogOut, Pill, UserRound, Copy, Check, RotateCcw
+  Users, Brain, Target, Info, LogOut, Pill, UserRound, Copy, Check, RotateCcw,
+  Globe
 } from "lucide-react";
 import { sendChatMessage, voiceConverse, getVoiceStatus, uploadReport, listReports, setToken } from "./api.js";
+import { SUPPORTED_LANGUAGES, getTranslation } from "./i18n.js";
 import LandingPage from "./LandingPage.jsx";
 import LoginPage from "./LoginPage.jsx";
 import LabReportChart from "./LabReportChart.jsx";
 import CycleRing from "./CycleRing.jsx";
 import RemindersPage from "./RemindersPage.jsx";
 import ActivityTrackerPage from "./ActivityTrackerPage.jsx";
-
-const PAGE_TITLES = {
-  dashboard: "Dashboard",
-  assistant: "Ask NARI",
-  reports: "Reports",
-  twin: "Digital Health Twin",
-  reminders: "Medicine Reminders",
-  activity: "Daily Activity",
-  clinician: "Clinician Portal",
-};
 
 const AGENT_PIPELINE = [
   { name: "Safety & Emergency", note: "Immediate clinical safety assessment" },
@@ -91,53 +83,29 @@ const DEMO_PATIENT_DETAIL = {
   },
 };
 
-const INITIAL_MESSAGES = [
-  {
-    id: 1,
-    sender: "assistant",
-    agent: "NARI",
-    text: "Hello! I am NARI, your personal health companion. Take a comfortable moment — how can I help you today? You can ask about physical symptoms, menstrual cycle phases, lab reports, or nutrition.",
-  },
-];
-
-const SUGGESTED_PROMPTS = [
-  "Explain my latest ferritin lab result",
-  "Comforting foods for the luteal phase",
-  "I have mild pelvic cramps today",
-  "Check my medication safety",
-];
-
 const INITIAL_NOTIFICATIONS = [];
 const DEMO_PROFILE = { full_name: "Ananya", cycle_day: 18, cycle_phase: "Luteal phase" };
 
 const KNOWN_FEMALE_VOICE_NAMES = [
   "zira", "samantha", "victoria", "karen", "moira", "tessa", "fiona", "susan",
   "google us english", "google uk english female", "kathy", "veena", "lekha",
-  "aria", "jenny", "libby", "emma",
-];
-const KNOWN_MALE_VOICE_NAMES = [
-  "david", "mark", "guy", "daniel", "alex", "fred", "google uk english male",
-  "james", "ravi", "arthur", "eric", "george",
+  "aria", "jenny", "libby", "emma", "heera", "kalpana", "geeta",
 ];
 
-function pickFemaleVoice(voices) {
-  const englishVoices = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith("en"));
-  const pool = englishVoices.length > 0 ? englishVoices : voices;
-
+function pickVoiceForLanguage(voices, lang = "en") {
+  const targetPrefix = lang.toLowerCase();
+  const matchingLang = voices.filter((v) => v.lang && v.lang.toLowerCase().startsWith(targetPrefix));
+  const pool = matchingLang.length > 0 ? matchingLang : voices.filter((v) => v.lang && (v.lang.toLowerCase().includes("in") || v.lang.toLowerCase().startsWith("en")));
+  
   const explicitlyFemale = pool.find((v) => /female/i.test(v.name));
   if (explicitlyFemale) return explicitlyFemale;
-
+  
   const knownFemale = pool.find((v) =>
     KNOWN_FEMALE_VOICE_NAMES.some((name) => v.name.toLowerCase().includes(name))
   );
   if (knownFemale) return knownFemale;
-
-  const notKnownMale = pool.find(
-    (v) =>
-      !/male/i.test(v.name) &&
-      !KNOWN_MALE_VOICE_NAMES.some((name) => v.name.toLowerCase().includes(name))
-  );
-  return notKnownMale || pool[0] || voices[0] || null;
+  
+  return pool[0] || voices[0] || null;
 }
 
 const STATUS_TO_FLAG = { NORMAL: "normal", HIGH: "high", LOW: "low", UNSPECIFIED: "flagged" };
@@ -146,6 +114,14 @@ const SESSION_KEY = "nari_session_user";
 function deriveReportFlag(metrics) {
   if (!metrics || metrics.length === 0) return "flagged";
   return metrics.some((m) => m.status === "HIGH" || m.status === "LOW") ? "flagged" : "normal";
+}
+
+function formatDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  } catch {
+    return iso;
+  }
 }
 
 function loadSession() {
@@ -263,7 +239,7 @@ function FormattedMessage({ text }) {
   return <div className="chat-formatted-body">{elements}</div>;
 }
 
-function GuestNameGate({ value, onChange, onConfirm, onCancel }) {
+function GuestNameGate({ value, onChange, onConfirm, onCancel, lang }) {
   return (
     <div className="guest-gate-shell">
       <style>{`
@@ -332,8 +308,18 @@ export default function App() {
   const [view, setView] = useState(() => (loadSession() ? "app" : "landing"));
   const [activePage, setActivePage] = useState("dashboard");
   const [guestNameInput, setGuestNameInput] = useState("");
+  const [lang, setLang] = useState(() => localStorage.getItem("nari_lang") || "en");
 
-  const [messages, setMessages] = useState(INITIAL_MESSAGES);
+  const t = (key) => getTranslation(lang, key);
+
+  const [messages, setMessages] = useState(() => [
+    {
+      id: 1,
+      sender: "assistant",
+      agent: "NARI",
+      text: getTranslation(lang, "initial_assistant_greeting"),
+    },
+  ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
@@ -365,6 +351,10 @@ export default function App() {
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem("nari_lang", lang);
+  }, [lang]);
 
   useEffect(() => {
     saveSession(user);
@@ -435,7 +425,14 @@ export default function App() {
     setScanResult(null);
     setReportFile(null);
     setScanState("idle");
-    setMessages(INITIAL_MESSAGES);
+    setMessages([
+      {
+        id: Date.now(),
+        sender: "assistant",
+        agent: "NARI",
+        text: getTranslation(lang, "initial_assistant_greeting"),
+      },
+    ]);
   };
 
   const handleGuestConfirmed = () => {
@@ -453,7 +450,7 @@ export default function App() {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(() => {
         setCopiedId(id);
-        showToast("Response copied to clipboard");
+        showToast(t("copied"));
         setTimeout(() => setCopiedId(null), 2000);
       });
     }
@@ -470,8 +467,14 @@ export default function App() {
         utt.rate = 0.96;
         utt.pitch = 1.02;
         const voices = window.speechSynthesis.getVoices();
-        const chosenVoice = pickFemaleVoice(voices);
-        if (chosenVoice) utt.voice = chosenVoice;
+        const chosenVoice = pickVoiceForLanguage(voices, lang);
+        if (chosenVoice) {
+          utt.voice = chosenVoice;
+          utt.lang = chosenVoice.lang;
+        } else {
+          const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
+          if (currentLangObj) utt.lang = currentLangObj.speechCode;
+        }
         window.speechSynthesis.speak(utt);
       }, 70);
     } catch {
@@ -494,7 +497,12 @@ export default function App() {
         content: m.text,
       }));
 
-      const res = await sendChatMessage(msgText, historyPayload, DEMO_PROFILE, user?.id || null);
+      const activeProfile = {
+        ...DEMO_PROFILE,
+        language_preference: lang,
+      };
+
+      const res = await sendChatMessage(msgText, historyPayload, activeProfile, user?.id || null);
       const assistantMsg = {
         id: Date.now() + 1,
         sender: "assistant",
@@ -537,10 +545,10 @@ export default function App() {
         id: Date.now(),
         sender: "assistant",
         agent: "NARI",
-        text: "New consultation started. Take your time — what health topic would you like to explore?",
+        text: t("initial_assistant_greeting"),
       },
     ]);
-    showToast("Consultation reset");
+    showToast(t("new_chat"));
   };
 
   const toggleListening = () => {
@@ -553,6 +561,9 @@ export default function App() {
       const rec = new SpeechRecognition();
       rec.continuous = false;
       rec.interimResults = false;
+      const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
+      rec.lang = currentLangObj ? currentLangObj.speechCode : "en-IN";
+      
       rec.onresult = (e) => {
         const transcript = e.results[0][0].transcript;
         setInput(transcript);
@@ -584,6 +595,7 @@ export default function App() {
         date: "Just now",
         status: deriveReportFlag(data.metrics),
         statusLabel: deriveReportFlag(data.metrics) === "flagged" ? "Observation Markers" : "All Normal Range",
+        metrics: data.metrics || [],
       };
       setPastReports((prev) => [newRep, ...prev]);
     } catch (err) {
@@ -617,6 +629,8 @@ export default function App() {
         onGetStarted={() => setView("login")}
         onSignIn={() => setView("login")}
         onGuest={() => setView("guest_gate")}
+        lang={lang}
+        onLangChange={setLang}
       />
     );
   }
@@ -628,6 +642,7 @@ export default function App() {
         onChange={setGuestNameInput}
         onConfirm={handleGuestConfirmed}
         onCancel={() => setView("landing")}
+        lang={lang}
       />
     );
   }
@@ -638,12 +653,15 @@ export default function App() {
         onSignIn={handleSignIn}
         onGuest={() => setView("guest_gate")}
         onBack={() => setView("landing")}
+        lang={lang}
+        onLangChange={setLang}
       />
     );
   }
 
   const displayName = user?.guest ? user?.fullName || "Guest" : user?.fullName || (user?.email ? user.email.split("@")[0] : "there");
   const unreadCount = notifications.filter((n) => n.unread).length;
+  const suggestedList = getTranslation(lang, "suggested_prompts") || [];
 
   return (
     <div className="app-shell">
@@ -729,6 +747,19 @@ export default function App() {
         }
         .topbar-title{ font-family:var(--font-head); font-weight:700; font-size:18px; color:var(--md-ink-primary); }
         .topbar-actions{ display:flex; align-items:center; gap:12px; position:relative; }
+
+        /* Material 3 Language Selector Pill */
+        .lang-pill-container{
+          display:flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--md-outline-strong);
+          border-radius:999px; padding:4px 12px; font-size:12.5px; color:var(--md-primary); font-weight:600;
+          transition:all .18s ease;
+        }
+        .lang-pill-container:hover{ background:var(--md-surface-container-high); border-color:var(--md-primary); }
+        .lang-pill-container select{
+          border:none; outline:none; background:transparent; font-family:inherit; font-weight:700;
+          font-size:12.5px; color:var(--md-primary); cursor:pointer; padding:2px 0;
+        }
+
         .guest-banner{
           background:var(--md-amber-container); color:var(--md-amber-on-container); font-size:12px; padding:6px 14px; border-radius:999px;
           display:flex; align-items:center; gap:8px; font-weight:600; border:1px solid var(--md-amber-border);
@@ -1021,27 +1052,27 @@ export default function App() {
         </div>
         <nav className="sidebar-nav">
           <a href="#dashboard" onClick={goTo("dashboard")} className={`nav-item ${activePage === "dashboard" ? "active" : ""}`}>
-            <Home size={17} /><span>Dashboard</span>
+            <Home size={17} /><span>{t("dashboard")}</span>
           </a>
           <a href="#assistant" onClick={goTo("assistant")} className={`nav-item ${activePage === "assistant" ? "active" : ""}`}>
-            <MessageCircle size={17} /><span>Ask NARI</span>
+            <MessageCircle size={17} /><span>{t("assistant")}</span>
           </a>
           <a href="#reports" onClick={goTo("reports")} className={`nav-item ${activePage === "reports" ? "active" : ""}`}>
-            <FileText size={17} /><span>Reports</span>
+            <FileText size={17} /><span>{t("reports")}</span>
           </a>
           <a href="#twin" onClick={goTo("twin")} className={`nav-item ${activePage === "twin" ? "active" : ""}`}>
-            <HeartPulse size={17} /><span>Health Twin</span>
+            <HeartPulse size={17} /><span>{t("twin")}</span>
           </a>
 
           <div className="nav-section-label"><span>Lifestyle &amp; Clinic</span></div>
           <a href="#reminders" onClick={goTo("reminders")} className={`nav-item nav-item-secondary ${activePage === "reminders" ? "active" : ""}`}>
-            <Pill size={17} /><span>Reminders</span>
+            <Pill size={17} /><span>{t("reminders")}</span>
           </a>
           <a href="#activity" onClick={goTo("activity")} className={`nav-item nav-item-secondary ${activePage === "activity" ? "active" : ""}`}>
-            <Activity size={17} /><span>Daily Activity</span>
+            <Activity size={17} /><span>{t("activity")}</span>
           </a>
           <a href="#clinician" onClick={goTo("clinician")} className={`nav-item nav-item-secondary ${activePage === "clinician" ? "active" : ""}`}>
-            <Stethoscope size={17} /><span>Clinician Portal</span>
+            <Stethoscope size={17} /><span>{t("clinician")}</span>
           </a>
         </nav>
         <div className="sidebar-foot">
@@ -1053,7 +1084,7 @@ export default function App() {
             </div>
           </div>
           <button className="signout-btn" onClick={handleSignOut}>
-            <LogOut size={13} /><span>{user?.guest ? "Exit guest mode" : "Sign out"}</span>
+            <LogOut size={13} /><span>{user?.guest ? t("exit_guest") : t("sign_out")}</span>
           </button>
         </div>
       </aside>
@@ -1061,12 +1092,28 @@ export default function App() {
       {/* Main Column */}
       <div className="main-col">
         <header className="topbar">
-          <div className="topbar-title">{PAGE_TITLES[activePage]}</div>
+          <div className="topbar-title">{t(activePage) || activePage}</div>
           <div className="topbar-actions">
+            {/* Multilingual Selector */}
+            <div className="lang-pill-container" title="Select Indian Language">
+              <Globe size={15} />
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value)}
+                aria-label="Language Selector"
+              >
+                {SUPPORTED_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.native} ({l.name})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {user?.guest && (
               <div className="guest-banner">
-                <span>Guest mode — data stored locally</span>
-                <button onClick={() => setView("login")}>Sign in</button>
+                <span>{t("guest_banner")}</span>
+                <button onClick={() => setView("login")}>{t("sign_in")}</button>
               </div>
             )}
             <button className="icon-btn" onClick={() => setShowNotifPanel((v) => !v)} aria-label="Notifications">
@@ -1109,13 +1156,13 @@ export default function App() {
             <>
               <section className="welcome-card">
                 <div>
-                  <p className="eyebrow-sm">Personal Wellness Hub</p>
-                  <h1>Welcome back, {displayName}</h1>
-                  <p className="muted">Take a deep breath — here is where your continuous health twin stands today.</p>
+                  <p className="eyebrow-sm">{t("dashboard_overview")}</p>
+                  <h1>{t("welcome_back")}, {displayName}</h1>
+                  <p className="muted">{t("dashboard_sub")}</p>
                 </div>
                 <div className="quick-actions">
-                  <a href="#assistant" onClick={goTo("assistant")} className="qa-btn primary"><MessageCircle size={14} />Consult Assistant</a>
-                  <a href="#reports" onClick={goTo("reports")} className="qa-btn"><Upload size={14} />Scan Lab Report</a>
+                  <a href="#assistant" onClick={goTo("assistant")} className="qa-btn primary"><MessageCircle size={14} />{t("consult_assistant")}</a>
+                  <a href="#reports" onClick={goTo("reports")} className="qa-btn"><Upload size={14} />{t("scan_report")}</a>
                 </div>
               </section>
 
@@ -1128,25 +1175,25 @@ export default function App() {
                     <>
                       <div className="stat-card">
                         <MessageCircle size={18} className="stat-icon purple" />
-                        <div className="stat-label">Consultations</div>
+                        <div className="stat-label">{t("consultations")}</div>
                         <div className="stat-value">{userTurns}</div>
                         <div className="stat-sub">{userTurns === 0 ? "Ask your first question" : "This session"}</div>
                       </div>
                       <div className="stat-card">
                         <TrendingDown size={18} className="stat-icon teal" />
-                        <div className="stat-label">Latest Lab Status</div>
+                        <div className="stat-label">{t("latest_lab_status")}</div>
                         <div className="stat-value">{latestReport ? latestReport.statusLabel : "None yet"}</div>
                         <div className="stat-sub">{latestReport ? latestReport.name : "Upload a PDF or photo report"}</div>
                       </div>
                       <div className="stat-card">
                         <AlertTriangle size={18} className="stat-icon rose" />
-                        <div className="stat-label">Clinical Observations</div>
+                        <div className="stat-label">{t("clinical_observations")}</div>
                         <div className="stat-value">{sessionRiskSignals.length}</div>
                         <div className="stat-sub">{latestRisk ? `${latestRisk.domain} (${latestRisk.level})` : "None flagged this session"}</div>
                       </div>
                       <div className="stat-card">
                         <FileText size={18} className="stat-icon violet" />
-                        <div className="stat-label">Reports on Record</div>
+                        <div className="stat-label">{t("reports_on_record")}</div>
                         <div className="stat-value">{pastReports.length}</div>
                         <div className="stat-sub">{pastReports.length === 0 ? "Nothing uploaded yet" : "In current session"}</div>
                       </div>
@@ -1158,10 +1205,10 @@ export default function App() {
               <section className="pipeline-card">
                 <div className="pipeline-head">
                   <Network size={15} />
-                  <h3>Clinical Multi-Agent Reasoning Pipeline</h3>
+                  <h3>{t("pipeline_title")}</h3>
                 </div>
                 <p className="muted-sm" style={{ margin: "4px 0 0", color: "var(--md-ink-muted)", fontSize: "12px" }}>
-                  Every consultation is processed through deterministic safety checks, specialty routing, and guideline-based evidence retrieval.
+                  {t("pipeline_sub")}
                 </p>
                 <div className="pipeline-row">
                   {AGENT_PIPELINE.map((step, i) => (
@@ -1180,7 +1227,7 @@ export default function App() {
               </section>
 
               <section className="activity-card">
-                <h3>Recent Activity &amp; Logs</h3>
+                <h3>{t("recent_activity")}</h3>
                 {(() => {
                   const items = [];
                   sessionRiskSignals.slice(0, 3).forEach((r, i) => {
@@ -1239,18 +1286,18 @@ export default function App() {
                 <div className="chat-toolbar-right">
                   <button className="tool-btn" onClick={clearChat} title="Reset consultation">
                     <RotateCcw size={13} />
-                    <span>New Consultation</span>
+                    <span>{t("new_chat")}</span>
                   </button>
                   <button className={`tool-btn ${speakEnabled ? "on" : ""}`} onClick={() => setSpeakEnabled((v) => !v)}>
                     {speakEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
-                    <span>{speakEnabled ? "Voice Enabled" : "Voice Muted"}</span>
+                    <span>{speakEnabled ? t("voice_on") : t("voice_off")}</span>
                   </button>
                 </div>
               </div>
 
               <div className="chat-disclaimer">
                 <Info size={12} />
-                <span>Educational guidance grounded in certified clinical literature. Not a substitute for emergency care or formal diagnosis.</span>
+                <span>{t("chat_disclaimer")}</span>
               </div>
 
               <div className="chat-window">
@@ -1305,11 +1352,11 @@ export default function App() {
                         <div className="msg-footer">
                           <button className="msg-action-btn" onClick={() => copyMessage(m.id, m.text)}>
                             {copiedId === m.id ? <Check size={12} color="#2A856A" /> : <Copy size={12} />}
-                            <span>{copiedId === m.id ? "Copied" : "Copy"}</span>
+                            <span>{copiedId === m.id ? t("copied") : t("copy")}</span>
                           </button>
                           <button className="msg-action-btn" onClick={() => speak(m.text)}>
                             <Volume2 size={12} />
-                            <span>Listen</span>
+                            <span>{t("listen")}</span>
                           </button>
                         </div>
                       )}
@@ -1327,7 +1374,7 @@ export default function App() {
 
               {messages.length < 2 && (
                 <div className="chip-row">
-                  {SUGGESTED_PROMPTS.map((p) => (
+                  {suggestedList.map((p) => (
                     <button key={p} className="chip" onClick={() => handleSend(p)}>{p}</button>
                   ))}
                 </div>
@@ -1349,7 +1396,7 @@ export default function App() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                  placeholder={isListening ? "Listening with care…" : "Ask about symptoms, lab results, medications, or cycle phases…"}
+                  placeholder={isListening ? t("listening") : t("ask_nari_placeholder")}
                   className="chat-input"
                 />
                 <button className="send-btn" onClick={() => handleSend()} aria-label="Send"><Send size={15} /></button>

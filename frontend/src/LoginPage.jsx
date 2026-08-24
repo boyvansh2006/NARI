@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { HeartPulse, Mail, Lock, ArrowRight, ArrowLeft, ShieldCheck, UserRound } from "lucide-react";
+import { HeartPulse, Mail, Lock, ArrowRight, ArrowLeft, ShieldCheck, UserRound, Globe } from "lucide-react";
 import { registerUser, loginUser, setToken } from "./api.js";
+import { SUPPORTED_LANGUAGES } from "./i18n.js";
 
-export default function LoginPage({ onSignIn, onGuest, onBack }) {
+export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChange }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState("signin");
@@ -142,9 +143,27 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
 
       <div className="login-form-side">
         <div className="login-card">
-          <div className="login-brand">
-            <span className="login-brand-mark"><HeartPulse size={18} /></span>
-            <span>NARI</span>
+          <div className="login-brand" style={{ justifyContent: "space-between", width: "100%" }}>
+            <div style={{ display: "flex", align_items: "center", gap: "10px" }}>
+              <span className="login-brand-mark"><HeartPulse size={18} /></span>
+              <span>NARI</span>
+            </div>
+            {onLangChange && (
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#EDF5F1", border: "1px solid #D5E2DC", borderRadius: "999px", padding: "4px 12px" }}>
+                <Globe size={13} color="#1B5E50" />
+                <select
+                  value={lang}
+                  onChange={(e) => onLangChange(e.target.value)}
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: "12px", fontWeight: 700, color: "#1B5E50", cursor: "pointer" }}
+                >
+                  {SUPPORTED_LANGUAGES.map((l) => (
+                    <option key={l.code} value={l.code}>
+                      {l.native}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
           <p className="login-sub">Welcome. Take a peaceful moment to access your personalized health twin.</p>
 

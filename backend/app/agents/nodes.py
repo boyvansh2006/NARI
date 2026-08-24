@@ -87,16 +87,22 @@ def _build_agent_messages(state: GraphState) -> list[LLMMessage]:
     context_parts: list[str] = []
 
     profile = state.get("profile") or {}
-    if profile:
-        profile_str = f"Patient context: Cycle Day {profile.get('cycle_day', 'N/A')}, Phase: {profile.get('cycle_phase', 'N/A')}"
-        context_parts.append(profile_str)
-
-    evidence = state.get("evidence") or []
-    if evidence:
-        evidence_str = "Clinical evidence reference: " + "; ".join(
-            [f"{e.get('source_title')}: {e.get('text')}" for e in evidence[:2]]
-        )
-        context_parts.append(evidence_str)
+    LANG_NAMES = {
+        "hi": "Hindi (हिन्दी)",
+        "bn": "Bengali (বাংলা)",
+        "ta": "Tamil (தமிழ்)",
+        "te": "Telugu (తెలుగు)",
+        "mr": "Marathi (मराठी)",
+        "gu": "Gujarati (ગુજરાતી)",
+        "kn": "Kannada (ಕನ್ನಡ)",
+        "ml": "Malayalam (മലയാളം)",
+        "pa": "Punjabi (ਪੰਜਾਬੀ)",
+        "en": "English",
+    }
+    lang_pref = profile.get("language_preference") or profile.get("language") or "en"
+    if lang_pref and lang_pref != "en":
+        target_lang = LANG_NAMES.get(lang_pref, lang_pref)
+        context_parts.append(f"Language Directive: Respond fluently and naturally in {target_lang}. Keep medical terminology understandable, respectful, and comforting.")
 
     if context_parts:
         augmented_text = f"{current_msg}\n\n[Clinical Context: {' | '.join(context_parts)}]"
