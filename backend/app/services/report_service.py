@@ -115,6 +115,9 @@ class ReportService:
         if user_id is not None:
             base_query = base_query.where(Report.user_id == user_id)
             count_query = count_query.where(Report.user_id == user_id)
+        else:
+            base_query = base_query.where(Report.user_id.is_(None))
+            count_query = count_query.where(Report.user_id.is_(None))
 
         total = int((await self.session.execute(count_query)).scalar_one())
         statement = base_query.order_by(Report.uploaded_at.desc()).offset(offset).limit(page_size)
@@ -140,6 +143,8 @@ class ReportService:
         statement = select(Report).where(Report.id == report_id)
         if user_id is not None:
             statement = statement.where(Report.user_id == user_id)
+        else:
+            statement = statement.where(Report.user_id.is_(None))
         report = (await self.session.execute(statement)).scalar_one_or_none()
         if report is None:
             raise ReportNotFoundError()

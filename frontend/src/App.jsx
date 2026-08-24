@@ -393,6 +393,32 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    if (user && !user.guest) {
+      listReports()
+        .then((res) => {
+          if (res && Array.isArray(res.items)) {
+            const formatted = res.items.map((r) => {
+              const metrics = r.report_json?.metrics || [];
+              const flag = deriveReportFlag(metrics);
+              return {
+                id: r.id,
+                name: r.original_filename,
+                date: r.uploaded_at ? formatDate(r.uploaded_at) : "Recently",
+                status: flag,
+                statusLabel: flag === "flagged" ? "Observation Markers" : "All Normal Range",
+                metrics: metrics,
+              };
+            });
+            setPastReports(formatted);
+          }
+        })
+        .catch(() => {});
+    } else {
+      setPastReports([]);
+    }
+  }, [user]);
+
   const handleSignIn = (userData) => {
     setUser(userData);
     setView("app");
@@ -401,8 +427,14 @@ export default function App() {
   const handleSignOut = () => {
     setUser(null);
     setToken(null);
+    saveSession(null);
     setView("landing");
     setPastReports([]);
+    setSessionRiskSignals([]);
+    setSessionCarePlan(null);
+    setScanResult(null);
+    setReportFile(null);
+    setScanState("idle");
     setMessages(INITIAL_MESSAGES);
   };
 
@@ -1393,9 +1425,21 @@ export default function App() {
                 <ul>
                   {pastReports.length === 0 && <li><span className="muted-sm" style={{ color: "var(--md-ink-muted)", fontSize: "13px" }}>No previous lab records uploaded yet.</span></li>}
                   {pastReports.map((r) => (
-                    <li key={r.id}>
+                    <li
+                      key={r.id}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => {
+                        if (r.metrics && r.metrics.length > 0) {
+                          setScanResult({ report_id: r.id, metrics: r.metrics });
+                          setReportFile({ name: r.name });
+                          setScanState("done");
+                          showToast(`Loaded ${r.name}`);
+                        }
+                      }}
+                      title="Click to view biomarker chart"
+                    >
                       <FileText size={15} />
-                      <div><strong>{r.name}</strong><span>{r.date}</span></div>
+                      <div><strong>{r.name}</strong><span>{r.date} · Click to inspect</span></div>
                       <span className={`flag-pill ${r.status}`}>{r.statusLabel}</span>
                     </li>
                   ))}
