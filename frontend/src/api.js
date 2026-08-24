@@ -181,3 +181,41 @@ export async function syncGoogleFit() {
   });
   return handleJson(res); // DailyActivityLog
 }
+
+/** Secure Menstrual Cycle & Period Tracking */
+export async function fetchCycles() {
+  const res = await fetch(`${API_BASE}/api/v1/cycles`, { headers: authHeaders() });
+  return handleJson(res);
+}
+
+export async function logCycle(data) {
+  const res = await fetch(`${API_BASE}/api/v1/cycles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(data),
+  });
+  return handleJson(res);
+}
+
+export async function updateCycle(cycleId, patch) {
+  const res = await fetch(`${API_BASE}/api/v1/cycles/${cycleId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  return handleJson(res);
+}
+
+export async function deleteCycle(cycleId) {
+  const res = await fetch(`${API_BASE}/api/v1/cycles/${cycleId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (res.status === 204) return true;
+  return handleJson(res);
+}
+
+export async function getCycleAnalytics() {
+  const res = await fetch(`${API_BASE}/api/v1/cycles/analytics`, { headers: authHeaders() });
+  return handleJson(res);
+}

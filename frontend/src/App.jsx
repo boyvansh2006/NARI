@@ -15,6 +15,7 @@ import LabReportChart from "./LabReportChart.jsx";
 import CycleRing from "./CycleRing.jsx";
 import RemindersPage from "./RemindersPage.jsx";
 import ActivityTrackerPage from "./ActivityTrackerPage.jsx";
+import PeriodTrackerPage from "./PeriodTrackerPage.jsx";
 
 const AGENT_PIPELINE = [
   { name: "Safety & Emergency", note: "Immediate clinical safety assessment" },
@@ -1060,6 +1061,9 @@ export default function App() {
           <a href="#reports" onClick={goTo("reports")} className={`nav-item ${activePage === "reports" ? "active" : ""}`}>
             <FileText size={17} /><span>{t("reports")}</span>
           </a>
+          <a href="#periods" onClick={goTo("periods")} className={`nav-item ${activePage === "periods" ? "active" : ""}`}>
+            <Droplets size={17} /><span>{t("periods")}</span>
+          </a>
           <a href="#twin" onClick={goTo("twin")} className={`nav-item ${activePage === "twin" ? "active" : ""}`}>
             <HeartPulse size={17} /><span>{t("twin")}</span>
           </a>
@@ -1162,6 +1166,7 @@ export default function App() {
                 </div>
                 <div className="quick-actions">
                   <a href="#assistant" onClick={goTo("assistant")} className="qa-btn primary"><MessageCircle size={14} />{t("consult_assistant")}</a>
+                  <a href="#periods" onClick={goTo("periods")} className="qa-btn"><Droplets size={14} />{t("track_periods")}</a>
                   <a href="#reports" onClick={goTo("reports")} className="qa-btn"><Upload size={14} />{t("scan_report")}</a>
                 </div>
               </section>
@@ -1599,6 +1604,10 @@ export default function App() {
                 </section>
               </div>
             </div>
+          )}
+
+          {activePage === "periods" && (
+            <PeriodTrackerPage isGuest={!!user?.guest} />
           )}
 
           {activePage === "reminders" && (
