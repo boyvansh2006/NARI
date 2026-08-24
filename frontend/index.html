@@ -3,25 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!--
-      Without this, browsers/WebViews with OS-level "force dark mode" (very
-      common on Android) will auto-invert colors on native form controls
-      (button, input, select) that don't have every CSS property spelled
-      out explicitly - this is what was causing some buttons to render as
-      white-text-on-white-background even though the authored CSS looked
-      correct. Declaring the page as light-only opts every control out of
-      that auto-inversion.
-    -->
     <meta name="color-scheme" content="light only" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap"
     />
     <title>NARI — Nurturing Agentic Responsive Intelligence</title>
     <style>
-      html, body { margin: 0; padding: 0; background: #F6FAF8; font-family: 'DM Sans', -apple-system, sans-serif; color: #1E3A34; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        background: #F7FAF8;
+        font-family: 'Plus Jakarta Sans', 'DM Sans', -apple-system, sans-serif;
+        color: #16362F;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
     </style>
   </head>
   <body>

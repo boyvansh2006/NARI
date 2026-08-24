@@ -10,11 +10,11 @@ import {
 const LOCAL_KEY = "nari_daily_activity";
 const GOALS = { water: 8, sleep: 8, steps: 10000, exercise: 30 };
 const MOODS = [
-  { key: "great", label: "Great", emoji: "😄" },
-  { key: "good", label: "Good", emoji: "🙂" },
-  { key: "okay", label: "Okay", emoji: "😐" },
-  { key: "low", label: "Low", emoji: "😔" },
-  { key: "stressed", label: "Stressed", emoji: "😣" },
+  { key: "great", label: "Energized", emoji: "✨" },
+  { key: "good", label: "Calm & Good", emoji: "🌿" },
+  { key: "okay", label: "Neutral", emoji: "🌤️" },
+  { key: "low", label: "Fatigued", emoji: "🌧️" },
+  { key: "stressed", label: "Tense / Anxious", emoji: "🌪️" },
 ];
 
 function todayKey() {
@@ -39,13 +39,13 @@ function emptyDay() {
   return { water: 0, sleep_hours: 0, steps: 0, exercise_minutes: 0, mood: null, meals: [], weight: "" };
 }
 
-function Ring({ value, goal, color, size = 84, stroke = 9, children }) {
+function Ring({ value, goal, color, size = 84, stroke = 8, children }) {
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const pct = Math.min(1, goal ? value / goal : 0);
   return (
     <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size / 2} cy={size / 2} r={r} stroke="#E6ECE8" strokeWidth={stroke} fill="none" />
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="#E0EAE5" strokeWidth={stroke} fill="none" />
       <circle
         cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none"
         strokeDasharray={c} strokeDashoffset={c * (1 - pct)} strokeLinecap="round"
@@ -198,82 +198,90 @@ export default function ActivityTrackerPage({ isGuest }) {
   return (
     <div className="activity-shell">
       <style>{`
-        .activity-shell{ display:flex; flex-direction:column; gap:20px; }
+        .activity-shell{ display:flex; flex-direction:column; gap:22px; font-family:'Plus Jakarta Sans','DM Sans',sans-serif; }
         .act-hero{
-          background:linear-gradient(140deg, #0A3B31 0%, #0F5144 100%); color:#fff; border-radius:20px; padding:24px 28px;
-          display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; box-shadow:var(--shadow-card);
+          background:linear-gradient(150deg, #144D42 0%, #1B5E50 100%); color:#fff; border-radius:24px; padding:26px 30px;
+          display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; box-shadow:0 4px 18px rgba(27,94,80,0.12);
         }
-        .act-hero h2{ color:#fff; font-size:19px; }
-        .act-hero p{ color:rgba(230,244,241,0.85); font-size:13px; margin-top:4px; }
+        .act-hero h2{ color:#fff; font-size:20px; font-weight:700; margin:0; }
+        .act-hero p{ color:rgba(235,246,242,0.9); font-size:13.5px; margin:4px 0 0; }
+        
         .fit-card{
-          background:#fff; border-radius:16px; padding:16px 20px; box-shadow:var(--shadow-card);
-          border:1px solid #E2EBE7; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px;
+          background:#fff; border-radius:20px; padding:18px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.03);
+          border:1px solid #E0EAE5; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px;
         }
-        .fit-info{ display:flex; align-items:center; gap:12px; }
+        .fit-info{ display:flex; align-items:center; gap:14px; }
         .fit-icon{
-          width:42px; height:42px; border-radius:12px; background:#E6F4F1;
-          display:flex; align-items:center; justify-content:center; color:#0F5144; flex-shrink:0;
+          width:44px; height:44px; border-radius:14px; background:#D6EDE5;
+          display:flex; align-items:center; justify-content:center; color:#06332A; flex-shrink:0;
         }
         .fit-actions{ display:flex; align-items:center; gap:10px; }
         .fit-btn{
-          background:#0F5144; color:#fff; border:none; border-radius:10px;
-          padding:9px 16px; font-family:var(--font-head); font-weight:700; font-size:12.5px; cursor:pointer;
-          transition:all .18s ease;
+          background:#1B5E50; color:#fff; border:none; border-radius:999px;
+          padding:10px 20px; font-weight:700; font-size:13px; cursor:pointer;
+          transition:all .18s ease; box-shadow:0 2px 8px rgba(27,94,80,0.18);
         }
-        .fit-btn:hover{ background:#0A3B31; transform:translateY(-1px); }
+        .fit-btn:hover{ background:#144D42; transform:translateY(-1px); box-shadow:0 4px 12px rgba(27,94,80,0.25); }
         .fit-sync-btn{
-          background:#FAFCFB; color:#0F5144; border:1.5px solid #CBD5E1; border-radius:10px;
-          padding:8px 15px; font-family:var(--font-head); font-weight:700; font-size:12.5px; cursor:pointer;
+          background:#F4F8F6; color:#1B5E50; border:1.5px solid #D5E2DC; border-radius:999px;
+          padding:9px 18px; font-weight:700; font-size:13px; cursor:pointer;
           transition:all .18s ease;
         }
-        .fit-sync-btn:hover{ background:#E6F4F1; border-color:#0F5144; }
+        .fit-sync-btn:hover{ background:#EDF5F1; border-color:#1B5E50; }
+        
         .act-rings-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
         .act-ring-card{
-          background:#fff; border-radius:16px; padding:18px 16px; box-shadow:var(--shadow-card);
-          border:1px solid #E2EBE7; display:flex; flex-direction:column; align-items:center; text-align:center;
+          background:#fff; border-radius:20px; padding:20px 16px; box-shadow:0 1px 3px rgba(0,0,0,0.03);
+          border:1px solid #E0EAE5; display:flex; flex-direction:column; align-items:center; text-align:center;
+          transition:all .18s ease;
         }
-        .act-ring-label{ font-family:var(--font-head); font-weight:700; font-size:13px; color:#0F2922; margin-top:10px; }
-        .act-ring-value{ font-size:12px; color:#527068; margin-top:2px; }
-        .act-ring-controls{ display:flex; align-items:center; gap:8px; margin-top:12px; }
+        .act-ring-card:hover{ border-color:#34A883; transform:translateY(-2px); box-shadow:0 4px 14px rgba(27,94,80,0.06); }
+        .act-ring-label{ font-weight:700; font-size:13.5px; color:#0D2C24; margin-top:12px; }
+        .act-ring-value{ font-size:12.5px; color:#4E6D64; margin-top:2px; }
+        .act-ring-controls{ display:flex; align-items:center; gap:8px; margin-top:14px; }
         .act-ring-btn{
-          width:28px; height:28px; border-radius:50%; border:1px solid #E2E8F0; background:#FAFCFB;
-          display:flex; align-items:center; justify-content:center; color:#0F2922; cursor:pointer;
+          width:30px; height:30px; border-radius:50%; border:1px solid #D5E2DC; background:#FBFDFB;
+          display:flex; align-items:center; justify-content:center; color:#0D2C24; cursor:pointer;
           transition:all .15s ease;
         }
-        .act-ring-btn:hover{ background:#E6F4F1; border-color:#0F5144; }
+        .act-ring-btn:hover{ background:#D6EDE5; border-color:#1B5E50; color:#06332A; }
+        
         .act-two-col{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-        .act-card{ background:#fff; border-radius:16px; padding:20px 22px; box-shadow:var(--shadow-card); border:1px solid #E2EBE7; }
-        .act-card-head{ display:flex; align-items:center; gap:8px; color:#0F5144; margin-bottom:14px; }
-        .act-card-head h3{ font-size:14px; margin:0; color:#0F2922; font-weight:700; }
+        .act-card{ background:#fff; border-radius:20px; padding:22px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.03); border:1px solid #E0EAE5; }
+        .act-card-head{ display:flex; align-items:center; gap:9px; color:#1B5E50; margin-bottom:16px; }
+        .act-card-head h3{ font-size:14.5px; margin:0; color:#0D2C24; font-weight:700; }
         .mood-row{ display:flex; gap:8px; flex-wrap:wrap; }
         .mood-btn{
-          flex:1; min-width:52px; padding:9px 6px; border-radius:12px; border:1.5px solid #E2E8F0;
-          background:#FAFCFB; display:flex; flex-direction:column; align-items:center; gap:4px; font-size:11px;
-          color:#527068; font-weight:600; cursor:pointer; transition:all .18s ease;
+          flex:1; min-width:54px; padding:10px 8px; border-radius:14px; border:1.5px solid #D5E2DC;
+          background:#FBFDFB; display:flex; flex-direction:column; align-items:center; gap:5px; font-size:11px;
+          color:#4E6D64; font-weight:600; cursor:pointer; transition:all .18s ease;
         }
-        .mood-btn span:first-child{ font-size:18px; }
-        .mood-btn:hover{ background:#E6F4F1; border-color:#0F5144; }
-        .mood-btn.selected{ background:#E6F4F1; border-color:#0F5144; color:#0F5144; font-weight:700; }
-        .meal-form{ display:flex; gap:8px; margin-bottom:12px; }
-        .meal-form input{ flex:1; border:1.5px solid #E2E8F0; border-radius:10px; padding:9px 14px; font-size:13.5px; outline:none; }
-        .meal-form input:focus{ border-color:#0F5144; }
-        .meal-form button{ background:#0F5144; color:#fff; border:none; border-radius:10px; width:38px; height:38px; display:flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer; }
+        .mood-btn span:first-child{ font-size:20px; }
+        .mood-btn:hover{ background:#EDF5F1; border-color:#1B5E50; }
+        .mood-btn.selected{ background:#D6EDE5; border-color:#1B5E50; color:#06332A; font-weight:700; }
+        
+        .meal-form{ display:flex; gap:8px; margin-bottom:14px; }
+        .meal-form input{ flex:1; border:1.5px solid #D5E2DC; border-radius:999px; padding:10px 16px; font-size:13.5px; outline:none; background:#FBFDFB; }
+        .meal-form input:focus{ border-color:#1B5E50; background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.1); }
+        .meal-form button{ background:#1B5E50; color:#fff; border:none; border-radius:50%; width:40px; height:40px; display:flex; align-items:center; justify-content:center; flex-shrink:0; cursor:pointer; }
         .meal-list{ display:flex; flex-direction:column; gap:8px; max-height:180px; overflow-y:auto; }
-        .meal-item{ display:flex; align-items:center; justify-content:space-between; background:#F0F7F4; border-radius:10px; padding:8px 12px; font-size:13px; }
-        .meal-item span:first-child{ color:#1E3A34; }
-        .meal-item span.muted-sm{ font-size:11px; color:#527068; }
-        .meal-item button{ background:none; border:none; color:#94A3B8; font-size:12px; cursor:pointer; }
-        .meal-item button:hover{ color:#DC2626; }
-        .weight-row{ display:flex; align-items:center; gap:10px; margin-top:8px; }
-        .weight-input{ width:120px; border:1.5px solid #E2E8F0; border-radius:10px; padding:8px 12px; font-size:13.5px; outline:none; }
-        .weight-input:focus{ border-color:#0F5144; }
-        .history-strip{ display:flex; justify-content:space-between; gap:8px; margin-top:12px; }
+        .meal-item{ display:flex; align-items:center; justify-content:space-between; background:#EDF5F1; border-radius:12px; padding:9px 14px; font-size:13px; }
+        .meal-item span:first-child{ color:#1E3A34; font-weight:500; }
+        .meal-item span.muted-sm{ font-size:11.5px; color:#4E6D64; }
+        .meal-item button{ background:none; border:none; color:#8A9E96; font-size:12px; cursor:pointer; }
+        .meal-item button:hover{ color:#C74D4D; }
+        
+        .weight-row{ display:flex; align-items:center; gap:12px; margin-top:8px; }
+        .weight-input{ width:130px; border:1.5px solid #D5E2DC; border-radius:12px; padding:9px 14px; font-size:13.5px; outline:none; background:#FBFDFB; }
+        .weight-input:focus{ border-color:#1B5E50; background:#fff; }
+        
+        .history-strip{ display:flex; justify-content:space-between; gap:8px; margin-top:14px; }
         .history-day{ flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; }
-        .history-bar-track{ width:100%; max-width:24px; height:90px; background:#E6ECE8; border-radius:6px; display:flex; align-items:flex-end; overflow:hidden; }
-        .history-bar-fill{ width:100%; border-radius:6px; transition:height .5s ease; }
-        .history-day span{ font-size:11px; color:#527068; font-weight:600; }
-        .history-day.today span{ color:#0F5144; font-weight:700; }
-        .act-guest-note{ font-size:12px; color:#527068; background:#E6F4F1; border-radius:12px; padding:10px 16px; border:1px solid #D1FAE5; }
+        .history-bar-track{ width:100%; max-width:24px; height:90px; background:#E0EAE5; border-radius:999px; display:flex; align-items:flex-end; overflow:hidden; }
+        .history-bar-fill{ width:100%; border-radius:999px; transition:height .5s ease; }
+        .history-day span{ font-size:11.5px; color:#4E6D64; font-weight:600; }
+        .history-day.today span{ color:#1B5E50; font-weight:700; }
+        .act-guest-note{ font-size:12.5px; color:#4E6D64; background:#D6EDE5; border-radius:16px; padding:12px 18px; border:1px solid #C0DFD4; }
 
         @media (max-width:800px){
           .act-rings-grid{ grid-template-columns:repeat(2,1fr); }
@@ -284,19 +292,19 @@ export default function ActivityTrackerPage({ isGuest }) {
       <div className="act-hero">
         <div>
           <h2>Daily Activity &amp; Wellness Tracker</h2>
-          <p>Track hydration, sleep, steps, meals, and mood across your cycle.</p>
+          <p>Mindful tracking of hydration, restful sleep, daily steps, and mood across your cycle.</p>
         </div>
       </div>
 
       {!isGuest && (
         <div className="fit-card">
           <div className="fit-info">
-            <div className="fit-icon"><Watch size={20} /></div>
+            <div className="fit-icon"><Watch size={22} /></div>
             <div>
-              <strong style={{ display: "block", fontFamily: "var(--font-head)", fontSize: "14px", color: "#0F2922" }}>
+              <strong style={{ display: "block", fontSize: "14.5px", color: "#0D2C24" }}>
                 Google Fit Integration
               </strong>
-              <span className="muted-sm" style={{ fontSize: "12px", color: "#527068" }}>
+              <span className="muted-sm" style={{ fontSize: "12.5px", color: "#4E6D64" }}>
                 {fitConnected ? "Connected — daily step count syncs automatically." : "Connect Google Fit to automatically import wearable metrics."}
               </span>
             </div>
@@ -321,7 +329,7 @@ export default function ActivityTrackerPage({ isGuest }) {
 
       <div className="act-rings-grid">
         <div className="act-ring-card">
-          <Ring value={day.water} goal={GOALS.water} color="#059669"><Droplet size={20} color="#059669" /></Ring>
+          <Ring value={day.water} goal={GOALS.water} color="#2A856A"><Droplet size={20} color="#2A856A" /></Ring>
           <div className="act-ring-label">Water</div>
           <div className="act-ring-value">{day.water} / {GOALS.water} glasses</div>
           <div className="act-ring-controls">
@@ -331,7 +339,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.sleep_hours} goal={GOALS.sleep} color="#0F766E"><Moon size={20} color="#0F766E" /></Ring>
+          <Ring value={day.sleep_hours} goal={GOALS.sleep} color="#1F6B62"><Moon size={20} color="#1F6B62" /></Ring>
           <div className="act-ring-label">Sleep</div>
           <div className="act-ring-value">{day.sleep_hours} / {GOALS.sleep} hrs</div>
           <div className="act-ring-controls">
@@ -341,7 +349,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.steps} goal={GOALS.steps} color="#047857"><Footprints size={20} color="#047857" /></Ring>
+          <Ring value={day.steps} goal={GOALS.steps} color="#34A883"><Footprints size={20} color="#34A883" /></Ring>
           <div className="act-ring-label">Steps</div>
           <div className="act-ring-value">{day.steps.toLocaleString()} / {GOALS.steps.toLocaleString()}</div>
           <div className="act-ring-controls">
@@ -351,8 +359,8 @@ export default function ActivityTrackerPage({ isGuest }) {
         </div>
 
         <div className="act-ring-card">
-          <Ring value={day.exercise_minutes} goal={GOALS.exercise} color="#D97706"><Dumbbell size={20} color="#D97706" /></Ring>
-          <div className="act-ring-label">Exercise</div>
+          <Ring value={day.exercise_minutes} goal={GOALS.exercise} color="#C27B2B"><Dumbbell size={20} color="#C27B2B" /></Ring>
+          <div className="act-ring-label">Movement</div>
           <div className="act-ring-value">{day.exercise_minutes} / {GOALS.exercise} min</div>
           <div className="act-ring-controls">
             <button className="act-ring-btn" onClick={() => bump("exercise_minutes", -5, 0)} aria-label="Decrease exercise"><Minus size={13} /></button>
@@ -363,7 +371,7 @@ export default function ActivityTrackerPage({ isGuest }) {
 
       <div className="act-two-col">
         <div className="act-card">
-          <div className="act-card-head"><Smile size={16} /><h3>Today's Mood &amp; Energy</h3></div>
+          <div className="act-card-head"><Smile size={17} /><h3>Today's Mood &amp; Emotional State</h3></div>
           <div className="mood-row">
             {MOODS.map((m) => (
               <button
@@ -377,8 +385,8 @@ export default function ActivityTrackerPage({ isGuest }) {
             ))}
           </div>
 
-          <div style={{ marginTop: "18px" }}>
-            <div className="act-card-head" style={{ marginBottom: "8px" }}><Scale size={16} /><h3>Weight Log</h3></div>
+          <div style={{ marginTop: "20px" }}>
+            <div className="act-card-head" style={{ marginBottom: "8px" }}><Scale size={17} /><h3>Weight Monitoring</h3></div>
             <div className="weight-row">
               <input
                 className="weight-input"
@@ -386,25 +394,25 @@ export default function ActivityTrackerPage({ isGuest }) {
                 value={day.weight || ""}
                 onChange={(e) => persist({ weight: e.target.value })}
               />
-              <span className="muted-sm">Track weight fluctuations across cycle phases</span>
+              <span className="muted-sm" style={{ color: "#4E6D64", fontSize: "12.5px" }}>Natural fluctuations across cycle phases</span>
             </div>
           </div>
         </div>
 
         <div className="act-card">
-          <div className="act-card-head"><Utensils size={16} /><h3>Nutrition &amp; Meals</h3></div>
+          <div className="act-card-head"><Utensils size={17} /><h3>Nourishment &amp; Meals</h3></div>
           <form className="meal-form" onSubmit={addMeal}>
             <input
-              placeholder="e.g. Lentil soup with spinach"
+              placeholder="e.g. Warm spinach salad with pumpkin seeds"
               value={mealInput}
               onChange={(e) => setMealInput(e.target.value)}
             />
-            <button type="submit" aria-label="Add meal"><Plus size={14} /></button>
+            <button type="submit" aria-label="Add meal"><Plus size={15} /></button>
           </form>
 
           <div className="meal-list">
             {(day.meals || []).length === 0 && (
-              <p className="muted-sm" style={{ padding: "8px 0" }}>No meals logged today yet.</p>
+              <p className="muted-sm" style={{ padding: "8px 0", color: "#4E6D64", fontSize: "12.5px" }}>No meals logged today yet.</p>
             )}
             {(day.meals || []).map((m, i) => (
               <div className="meal-item" key={i}>
@@ -420,8 +428,10 @@ export default function ActivityTrackerPage({ isGuest }) {
       </div>
 
       <div className="act-card">
-        <div className="act-card-head"><TrendingUp size={16} /><h3>7-Day Wellness Consistency</h3></div>
-        <p className="muted-sm">Computed across water, sleep, step, and exercise targets.</p>
+        <div className="act-card-head"><TrendingUp size={17} /><h3>7-Day Wellness Balance</h3></div>
+        <p className="muted-sm" style={{ color: "#4E6D64", fontSize: "12.5px", margin: "0 0 12px" }}>
+          Calculated across water, sleep, step, and movement balance.
+        </p>
         <div className="history-strip">
           {historyDisplay.map((d) => (
             <div key={d.key} className={`history-day ${d.isToday ? "today" : ""}`}>
@@ -431,8 +441,8 @@ export default function ActivityTrackerPage({ isGuest }) {
                   style={{
                     height: `${Math.max(6, d.score * 100)}%`,
                     background: d.isToday
-                      ? "linear-gradient(180deg,#059669,#0F5144)"
-                      : "linear-gradient(180deg,#D1FAE5,#A7F3D0)",
+                      ? "linear-gradient(180deg,#2A856A,#1B5E50)"
+                      : "linear-gradient(180deg,#D6EDE5,#A7D9C9)",
                   }}
                 />
               </div>

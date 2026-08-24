@@ -34,94 +34,92 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
     <div className="login-shell">
       <style>{`
         .login-shell{
-          min-height:100vh; display:flex; font-family:'DM Sans',-apple-system,sans-serif; background:#F6FAF8;
+          min-height:100vh; display:flex; font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; background:#F7FAF8;
         }
         .login-shell *{ box-sizing:border-box; }
-        .login-shell h1, .login-shell h2, .login-shell h3, .login-brand span{
-          font-family:'Sora',sans-serif;
-        }
         .login-visual{
-          flex:1.1; background:linear-gradient(150deg,#0A3B31 0%,#0F5144 60%,#134E4A 100%);
+          flex:1.1; background:linear-gradient(160deg,#144D42 0%,#1B5E50 60%,#236D5E 100%);
           display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff;
           position:relative; overflow:hidden; padding:48px;
         }
         .login-back-btn{
-          position:absolute; top:24px; left:24px; display:flex; align-items:center; gap:6px;
-          background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.2); color:#fff; border-radius:100px;
-          padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer; transition:background .2s ease; z-index:2;
+          position:absolute; top:24px; left:24px; display:flex; align-items:center; gap:8px;
+          background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.22); color:#fff; border-radius:999px;
+          padding:9px 18px; font-size:13px; font-weight:600; cursor:pointer; transition:all .2s ease; z-index:2;
         }
-        .login-back-btn:hover{ background:rgba(255,255,255,0.22); }
-        .login-visual::before{
-          content:''; position:absolute; width:340px; height:340px; border-radius:50%;
-          background:radial-gradient(circle,rgba(16,185,129,0.18) 0%,transparent 70%); top:-80px; left:-60px;
-        }
-        .login-visual::after{
-          content:''; position:absolute; width:280px; height:280px; border-radius:50%;
-          background:radial-gradient(circle,rgba(52,211,153,0.12) 0%,transparent 70%); bottom:-60px; right:-40px;
-        }
-        .login-visual-inner{ position:relative; z-index:1; text-align:center; max-width:360px; }
+        .login-back-btn:hover{ background:rgba(255,255,255,0.24); transform:translateX(-2px); }
+        .login-visual-inner{ position:relative; z-index:1; text-align:center; max-width:380px; }
         .login-visual-mark{
-          width:60px; height:60px; border-radius:18px; margin:0 auto 24px;
-          background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.25);
-          display:flex; align-items:center; justify-content:center; color:#6EE7B7;
+          width:64px; height:64px; border-radius:22px; margin:0 auto 24px;
+          background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25);
+          display:flex; align-items:center; justify-content:center; color:#D6EDE5;
         }
-        .login-visual h2{ font-size:27px; font-weight:800; margin-bottom:12px; color:#fff; letter-spacing:-0.01em; }
-        .login-visual p{ font-size:14px; line-height:1.7; color:rgba(230,244,241,0.85); }
+        .login-visual h2{ font-size:28px; font-weight:800; margin-bottom:14px; color:#fff; letter-spacing:-0.01em; line-height:1.2; }
+        .login-visual p{ font-size:14.5px; line-height:1.7; color:rgba(235,246,242,0.9); margin:0; }
         .login-badge-strip{
           display:inline-flex; align-items:center; gap:8px; margin-top:28px;
-          background:rgba(255,255,255,0.08); padding:7px 14px; border-radius:100px; font-size:12px;
-          color:#D1FAE5; border:1px solid rgba(255,255,255,0.15);
+          background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:999px; font-size:12.5px;
+          color:#D6EDE5; border:1px solid rgba(255,255,255,0.2); font-weight:500;
         }
 
         .login-form-side{
-          flex:1; display:flex; align-items:center; justify-content:center; background:#FFFFFF; padding:40px 32px;
-          border-left:1px solid #E6ECE8;
+          flex:1; display:flex; align-items:center; justify-content:center; background:#FFFFFF; padding:48px 36px;
+          border-left:1px solid #E2EBE6;
         }
-        .login-card{ width:100%; max-width:380px; }
+        .login-card{ width:100%; max-width:400px; }
         .login-brand{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
         .login-brand-mark{
-          width:34px; height:34px; border-radius:10px; background:#0F5144;
-          display:flex; align-items:center; justify-content:center; color:#E6F4F1; flex-shrink:0;
+          width:36px; height:36px; border-radius:12px; background:#1B5E50;
+          display:flex; align-items:center; justify-content:center; color:#D6EDE5; flex-shrink:0;
         }
-        .login-brand span{ font-weight:800; font-size:22px; letter-spacing:-0.01em; color:#0F2922; }
-        .login-sub{ color:#527068; font-size:13.5px; margin:0 0 24px; line-height:1.5; }
-        .login-tabs{ display:flex; background:#F0F7F4; border-radius:12px; padding:4px; margin-bottom:24px; border:1px solid #E6ECE8; }
+        .login-brand span{ font-weight:800; font-size:24px; letter-spacing:-0.01em; color:#0D2C24; }
+        .login-sub{ color:#4E6D64; font-size:14px; margin:0 0 26px; line-height:1.55; }
+        
+        /* M3 Segmented Switcher */
+        .login-tabs{ display:flex; background:#EDF5F1; border-radius:999px; padding:4px; margin-bottom:26px; border:1px solid #E0EAE5; }
         .login-tab{
-          flex:1; text-align:center; padding:9px 0; border:none; background:none; border-radius:8px;
-          font-family:'Sora',sans-serif; font-weight:700; font-size:13px; color:#527068; cursor:pointer;
-          transition: all .2s ease;
+          flex:1; text-align:center; padding:10px 0; border:none; background:none; border-radius:999px;
+          font-weight:700; font-size:13px; color:#4E6D64; cursor:pointer; transition: all .2s ease;
         }
-        .login-tab.active{ background:#0F5144; color:#fff; box-shadow:0 2px 8px rgba(15,81,68,0.25); }
-        .field{ margin-bottom:18px; }
-        .field label{ display:block; font-size:12px; font-weight:600; color:#1E3A34; margin-bottom:7px; }
+        .login-tab.active{ background:#1B5E50; color:#fff; box-shadow:0 2px 10px rgba(27,94,80,0.28); }
+
+        .field{ margin-bottom:20px; }
+        .field label{ display:block; font-size:12.5px; font-weight:600; color:#16362F; margin-bottom:8px; }
         .field-input{
-          display:flex; align-items:center; gap:10px; border:1.5px solid #E2E8F0;
-          border-radius:12px; padding:11px 14px; background:#FAFCFB; transition: all .2s ease;
+          display:flex; align-items:center; gap:12px; border:1.5px solid #D5E2DC;
+          border-radius:14px; padding:12px 16px; background:#FBFDFB; transition: all .2s ease;
         }
-        .field-input:focus-within{ border-color:#0F5144; background:#fff; box-shadow:0 0 0 3px rgba(15,81,68,0.1); }
-        .field-input svg{ color:#83A69C; flex-shrink:0; }
-        .field-input input{ border:none; outline:none; flex:1; font-size:14px; font-family:inherit; background:transparent; color:#0F2922; }
-        .login-error{ background:#FEF2F2; color:#991B1B; font-size:12.5px; padding:10px 14px; border-radius:10px; margin-bottom:16px; border:1px solid #FEE2E2; }
+        .field-input:focus-within{ border-color:#1B5E50; background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.12); }
+        .field-input svg{ color:#74998E; flex-shrink:0; }
+        .field-input input{ border:none; outline:none; flex:1; font-size:14px; font-family:inherit; background:transparent; color:#0D2C24; }
+        
+        .login-error{ background:#FDF2F2; color:#A02C2C; font-size:13px; padding:12px 16px; border-radius:12px; margin-bottom:18px; border:1px solid #F9D5D5; line-height:1.5; }
+        
+        /* M3 Filled Button */
         .login-submit{
           width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-          background:#0F5144; color:#fff; border:none; border-radius:12px;
-          padding:13px 0; font-family:'Sora',sans-serif; font-weight:700; font-size:14px;
-          cursor:pointer; transition: all .18s ease; margin-top:6px;
+          background:#1B5E50; color:#fff; border:none; border-radius:999px;
+          padding:14px 0; font-weight:700; font-size:14.5px;
+          cursor:pointer; transition: all .2s ease; margin-top:8px; box-shadow:0 4px 14px rgba(27,94,80,0.2);
         }
-        .login-submit:hover{ background:#0A3B31; transform:translateY(-1px); box-shadow:0 6px 16px rgba(15,81,68,0.25); }
+        .login-submit:hover{ background:#144D42; transform:translateY(-1px); box-shadow:0 6px 18px rgba(27,94,80,0.28); }
         .login-submit:disabled{ opacity:0.6; cursor:not-allowed; transform:none; }
-        .login-divider{ display:flex; align-items:center; gap:12px; margin:22px 0; }
-        .login-divider span{ font-size:11px; color:#83A69C; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
-        .login-divider::before, .login-divider::after{ content:''; flex:1; height:1px; background:#E6ECE8; }
+        
+        .login-divider{ display:flex; align-items:center; gap:14px; margin:24px 0; }
+        .login-divider span{ font-size:11.5px; color:#74998E; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+        .login-divider::before, .login-divider::after{ content:''; flex:1; height:1px; background:#E2EBE6; }
+        
+        /* M3 Tonal Outlined Button */
         .login-guest-btn{
           width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-          background:#FAFCFB; border:1.5px solid #CBD5E1; color:#0F5144; border-radius:12px;
-          padding:12px 0; font-family:'Sora',sans-serif; font-weight:700; font-size:13.5px;
-          cursor:pointer; transition: all .18s ease;
+          background:#F4F8F6; border:1.5px solid #D5E2DC; color:#1B5E50; border-radius:999px;
+          padding:13px 0; font-weight:700; font-size:14px;
+          cursor:pointer; transition: all .2s ease;
         }
-        .login-guest-btn:hover{ background:#F0F7F4; border-color:#0F5144; }
-        .login-foot{ text-align:center; margin-top:24px; font-size:12px; color:#64748B; display:flex; align-items:center; justify-content:center; gap:6px; }
-        .spinner{ width:15px; height:15px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+        .login-guest-btn:hover{ background:#EDF5F1; border-color:#1B5E50; }
+        
+        .login-foot{ text-align:center; margin-top:28px; font-size:12.5px; color:#6B8B82; display:flex; align-items:center; justify-content:center; gap:7px; }
+        .spinner{ width:16px; height:16px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
         @keyframes spin{ to{ transform:rotate(360deg); } }
         @media (max-width:820px){ .login-visual{ display:none; } }
       `}</style>
@@ -129,15 +127,15 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
       <div className="login-visual">
         {onBack && (
           <button className="login-back-btn" onClick={onBack}>
-            <ArrowLeft size={14} /> Back to overview
+            <ArrowLeft size={15} /> Back to overview
           </button>
         )}
         <div className="login-visual-inner">
-          <div className="login-visual-mark"><HeartPulse size={28} /></div>
-          <h2>Clinical rigor, tailored for women.</h2>
-          <p>NARI synthesizes your symptoms, lab markers, and longitudinal metrics into clear, evidence-grounded care recommendations.</p>
+          <div className="login-visual-mark"><HeartPulse size={30} /></div>
+          <h2>Thoughtful care, grounded in evidence.</h2>
+          <p>NARI synthesizes your symptoms, lab reports, and wearable metrics into clear, supportive care plans designed for your peace of mind.</p>
           <div className="login-badge-strip">
-            <ShieldCheck size={14} /> Grounded in WHO &amp; MoHFW Protocols
+            <ShieldCheck size={15} /> Grounded in WHO &amp; MoHFW Protocols
           </div>
         </div>
       </div>
@@ -148,11 +146,11 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
             <span className="login-brand-mark"><HeartPulse size={18} /></span>
             <span>NARI</span>
           </div>
-          <p className="login-sub">Continuous, evidence-grounded health intelligence across your cycle.</p>
+          <p className="login-sub">Welcome. Take a peaceful moment to access your personalized health twin.</p>
 
           <div className="login-tabs">
-            <button className={`login-tab ${mode === "signin" ? "active" : ""}`} onClick={() => setMode("signin")}>Sign in</button>
-            <button className={`login-tab ${mode === "signup" ? "active" : ""}`} onClick={() => setMode("signup")}>Create account</button>
+            <button className={`login-tab ${mode === "signin" ? "active" : ""}`} onClick={() => setMode("signin")}>Sign In</button>
+            <button className={`login-tab ${mode === "signup" ? "active" : ""}`} onClick={() => setMode("signup")}>Create Account</button>
           </div>
 
           {error && <div className="login-error">{error}</div>}
@@ -161,7 +159,7 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
             <div className="field">
               <label>Email Address</label>
               <div className="field-input">
-                <Mail size={16} />
+                <Mail size={17} />
                 <input
                   type="email"
                   placeholder="name@example.com"
@@ -176,7 +174,7 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
             <div className="field">
               <label>Password</label>
               <div className="field-input">
-                <Lock size={16} />
+                <Lock size={17} />
                 <input
                   type="password"
                   placeholder="••••••••"
@@ -196,8 +194,8 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
                 </>
               ) : (
                 <>
-                  {mode === "signin" ? "Sign in to NARI" : "Create your account"}
-                  <ArrowRight size={15} />
+                  {mode === "signin" ? "Sign in to NARI" : "Create Account"}
+                  <ArrowRight size={16} />
                 </>
               )}
             </button>
@@ -206,18 +204,18 @@ export default function LoginPage({ onSignIn, onGuest, onBack }) {
           {onGuest && (
             <>
               <div className="login-divider">
-                <span>Or explore first</span>
+                <span>Or explore without signing in</span>
               </div>
               <button className="login-guest-btn" type="button" onClick={onGuest}>
-                <UserRound size={15} />
+                <UserRound size={16} />
                 Continue in Guest Mode
               </button>
             </>
           )}
 
           <div className="login-foot">
-            <ShieldCheck size={13} />
-            <span>Private, encrypted session data</span>
+            <ShieldCheck size={14} />
+            <span>Private, client-isolated health data</span>
           </div>
         </div>
       </div>

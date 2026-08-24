@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   HeartPulse, ArrowRight, ShieldCheck, Lock, Activity,
-  FileText, Watch, Pill, Brain, ClipboardCheck, ChevronRight, Quote
+  FileText, Watch, Pill, Brain, ClipboardCheck, ChevronRight, Sparkles, Smile
 } from "lucide-react";
 
 /** Fades + slides a section up the first time it scrolls into view. */
@@ -59,26 +59,26 @@ function Counter({ to, suffix = "" }) {
 }
 
 const INPUT_STREAMS = [
-  { icon: Activity, label: "Symptoms & Cycle Variance", text: "Longitudinal symptom tracking mapped directly to hormonal cycle phases." },
-  { icon: FileText, label: "Pathology Reports & Scans", text: "Automated OCR extraction and biomarker trend tracking across laboratory visits." },
-  { icon: Watch, label: "Wearables & Activity", text: "Continuous sleep, hydration, and activity integration via Google Fit." },
-  { icon: Pill, label: "Medications & Adherence", text: "Automated interaction safety heuristics and proactive compliance tracking." },
-  { icon: Brain, label: "Mental Wellbeing & Stress", text: "Mood and sleep correlation analyzed as clinical health signals." },
-  { icon: ClipboardCheck, label: "Medical History & Guidelines", text: "Evidence-grounded protocols aligned with WHO and MoHFW clinical guidance." },
+  { icon: Activity, label: "Symptoms & Cycle Patterns", text: "Empathetic tracking connecting daily physical sensations to your hormonal phases." },
+  { icon: FileText, label: "Pathology Reports & Labs", text: "Upload reports to receive clear, calm explanations of your biomarkers without medical jargon." },
+  { icon: Watch, label: "Wearables & Restful Sleep", text: "Continuous sleep, hydration, and movement synced smoothly from Google Fit." },
+  { icon: Pill, label: "Medication Reminders", text: "Gentle nudges and automated interaction checks for supplements and prescriptions." },
+  { icon: Brain, label: "Mental Wellbeing & Ease", text: "Mood and stress validation treated as meaningful clinical health signals." },
+  { icon: ClipboardCheck, label: "Clinical Guidelines", text: "All advice grounded in certified WHO and MoHFW clinical protocols." },
 ];
 
 const PIPELINE = [
-  { n: "01", title: "Unify Continuous Health Data", text: "Symptoms, pathology reports, Google Fit wearables, and lifestyle metrics are combined into a single unified health record." },
-  { n: "02", title: "Multi-Agent Clinical Triage", text: "Specialized clinical nodes evaluate symptoms, biomarker flags, and metabolic indicators using verified medical heuristics." },
-  { n: "03", title: "Transparent, Explainable Risk Signals", text: "Every risk signal explicitly cites contributory factors and guidelines rather than opaque black-box assertions." },
-  { n: "04", title: "Continuous Longitudinal Care", text: "Proactive care plans and follow-up reminders designed to support women through every hormonal and reproductive stage." },
+  { n: "01", title: "Unify Your Health Signals", text: "Bring symptoms, labs, Google Fit wearables, and lifestyle notes into one tranquil, unified space." },
+  { n: "02", title: "Multi-Agent Clinical Evaluation", text: "Specialized clinical nodes reason over your symptoms, lab flags, and metabolic indicators with medical care." },
+  { n: "03", title: "Transparent, Understandable Insight", text: "Every risk signal explains its contributory factors in plain English, helping reduce health anxiety." },
+  { n: "04", title: "Continuous, Supportive Care", text: "Receive clear next steps, nutrition advice, and follow-up guidance across every life stage." },
 ];
 
 const STATS = [
-  { to: 7, suffix: " specialized", label: "Clinical reasoning agents" },
+  { to: 7, suffix: " specialized", label: "Care reasoning agents" },
   { to: 15, suffix: "+ verified", label: "WHO & MoHFW protocol sources" },
-  { to: 100, suffix: "%", label: "Transparent, explainable risk factors" },
-  { to: 24, suffix: "/7", label: "Proactive health monitoring" },
+  { to: 100, suffix: "%", label: "Transparent, explainable factors" },
+  { to: 24, suffix: "/7", label: "Empathetic health companion" },
 ];
 
 const DEMO_RING = [26, 31, 24, 33, 27, 35];
@@ -86,7 +86,7 @@ const DEMO_RING = [26, 31, 24, 33, 27, 35];
 function HeroRing({ lengths = [] }) {
   const size = 208, center = size / 2, maxR = 84, minR = 36;
   const max = Math.max(...lengths, 1);
-  const fills = ["#0F5144", "#10B981", "#059669", "#E06D63", "#047857", "#34D399"];
+  const fills = ["#1E5C4E", "#34A883", "#4D9A83", "#E07A6F", "#277564", "#52BA98"];
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width="100%" style={{ maxWidth: 208, display: "block", margin: "6px auto" }}>
       {lengths.map((len, i) => {
@@ -98,16 +98,16 @@ function HeroRing({ lengths = [] }) {
         const fill = fills[i % fills.length];
         return (
           <g key={i}>
-            <line x1={center} y1={center} x2={x} y2={y} stroke="#10B981" strokeWidth="1.5" opacity="0.25" />
+            <line x1={center} y1={center} x2={x} y2={y} stroke="#34A883" strokeWidth="1.5" opacity="0.22" />
             <circle cx={x} cy={y} r={petalR} fill={fill} />
-            <text x={x} y={y + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#FFFFFF" fontFamily="'DM Sans',sans-serif">
+            <text x={x} y={y + 4} textAnchor="middle" fontSize="11" fontWeight="700" fill="#FFFFFF" fontFamily="'Plus Jakarta Sans',sans-serif">
               {len}
             </text>
           </g>
         );
       })}
-      <circle cx={center} cy={center} r={25} fill="#0F5144" />
-      <text x={center} y={center + 4} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#E6F4F1" fontFamily="'DM Sans',sans-serif">
+      <circle cx={center} cy={center} r={25} fill="#1E5C4E" />
+      <text x={center} y={center + 4} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="#E8F4F0" fontFamily="'Plus Jakarta Sans',sans-serif">
         cycles
       </text>
     </svg>
@@ -119,167 +119,171 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
     <div className="land-shell">
       <style>{`
         .land-shell{
-          --forest:#0F5144;
-          --forest-dark:#0A3B31;
-          --emerald:#10B981;
-          --emerald-dark:#059669;
-          --mint-light:#E6F4F1;
-          --mint-bg:#F0F7F4;
-          --sand-bg:#F6FAF8;
-          --card-bg:#FFFFFF;
-          --ink-primary:#0F2922;
-          --ink-secondary:#2D4A43;
-          --ink-muted:#527068;
-          --line:#E2EBE7;
-          --shadow-sm: 0 1px 3px rgba(0,0,0,0.04);
-          --shadow-md: 0 6px 20px rgba(15,81,68,0.06);
-          --shadow-lg: 0 16px 40px rgba(15,81,68,0.08);
+          --md-primary:#1B5E50;
+          --md-primary-dark:#144D42;
+          --md-primary-container:#D6EDE5;
+          --md-on-primary-container:#06332A;
+          --md-surface:#F7FAF8;
+          --md-surface-container:#FFFFFF;
+          --md-surface-container-high:#EDF5F1;
+          --md-ink-primary:#0D2C24;
+          --md-ink-secondary:#1E3A34;
+          --md-ink-muted:#4E6D64;
+          --md-outline:#E0EAE5;
+          --md-outline-strong:#D5E2DC;
+          --md-shadow-sm: 0 1px 3px rgba(0,0,0,0.03);
+          --md-shadow-md: 0 4px 16px rgba(27,94,80,0.06);
+          --md-shadow-lg: 0 12px 32px rgba(27,94,80,0.08);
 
-          font-family:'DM Sans',-apple-system,sans-serif; color:var(--ink-secondary); background:var(--sand-bg); overflow-x:hidden;
+          font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; color:var(--md-ink-secondary); background:var(--md-surface); overflow-x:hidden;
           -webkit-font-smoothing:antialiased;
         }
         .land-shell *{ box-sizing:border-box; }
         .land-shell h1,.land-shell h2,.land-shell h3,.land-shell h4{
-          font-family:'Sora',sans-serif; margin:0; font-weight:700; letter-spacing:-0.01em; color:var(--ink-primary);
+          font-family:'Sora',sans-serif; margin:0; font-weight:700; letter-spacing:-0.01em; color:var(--md-ink-primary);
         }
         .land-shell section{ position:relative; }
-        .land-shell button{ font-family:'DM Sans',sans-serif; }
+        .land-shell button{ font-family:inherit; }
 
-        /* --- Nav --- */
+        /* --- M3 Navigation Bar --- */
         .land-nav{
-          display:flex; align-items:center; justify-content:space-between; padding:18px 56px;
-          position:sticky; top:0; z-index:30; background:rgba(246,250,248,0.92); backdrop-filter:blur(10px);
-          border-bottom:1px solid var(--line);
+          display:flex; align-items:center; justify-content:space-between; padding:16px 56px;
+          position:sticky; top:0; z-index:30; background:rgba(247,250,248,0.92); backdrop-filter:blur(10px);
+          border-bottom:1px solid var(--md-outline);
         }
-        .land-brand{ display:flex; align-items:center; gap:9px; font-family:'Sora',sans-serif; font-weight:700; font-size:18px; color:var(--forest); }
+        .land-brand{ display:flex; align-items:center; gap:10px; font-family:'Sora',sans-serif; font-weight:700; font-size:18.5px; color:var(--md-primary); }
         .land-brand-mark{
-          width:32px; height:32px; border-radius:9px; background:var(--forest);
-          display:flex; align-items:center; justify-content:center; color:#E6F4F1;
+          width:34px; height:34px; border-radius:10px; background:var(--md-primary);
+          display:flex; align-items:center; justify-content:center; color:#E8F4F0;
         }
-        .land-nav-links{ display:flex; gap:34px; }
-        .land-nav-links a{ color:var(--ink-muted); font-size:14px; font-weight:600; text-decoration:none; transition:color .2s ease; }
-        .land-nav-links a:hover{ color:var(--forest); }
-        .land-nav-actions{ display:flex; align-items:center; gap:16px; }
-        .land-link-btn{ background:none; border:none; color:var(--forest); font-weight:700; font-size:14px; cursor:pointer; }
+        .land-nav-links{ display:flex; gap:32px; }
+        .land-nav-links a{ color:var(--md-ink-muted); font-size:14px; font-weight:600; text-decoration:none; transition:color .2s ease; }
+        .land-nav-links a:hover{ color:var(--md-primary); }
+        .land-nav-actions{ display:flex; align-items:center; gap:14px; }
+        .land-link-btn{ background:none; border:none; color:var(--md-primary); font-weight:700; font-size:14px; cursor:pointer; padding:8px 12px; }
+        
+        /* M3 Pill CTA */
         .land-cta-btn{
-          display:inline-flex; align-items:center; gap:8px; background:var(--forest); color:#fff; border:none; border-radius:10px;
-          padding:10px 18px; font-weight:700; font-size:13.5px; cursor:pointer; transition:all .18s ease;
+          display:inline-flex; align-items:center; gap:8px; background:var(--md-primary); color:#fff; border:none; border-radius:999px;
+          padding:10px 20px; font-weight:700; font-size:13.5px; cursor:pointer; transition:all .2s ease;
+          box-shadow:0 2px 8px rgba(27,94,80,0.18);
         }
-        .land-cta-btn:hover{ background:var(--forest-dark); transform:translateY(-1px); box-shadow:0 4px 12px rgba(15,81,68,0.2); }
+        .land-cta-btn:hover{ background:var(--md-primary-dark); transform:translateY(-1px); box-shadow:0 4px 14px rgba(27,94,80,0.25); }
 
-        /* --- Hero --- */
-        .land-hero{ background:var(--sand-bg); padding:76px 56px 64px; }
+        /* --- Hero Section --- */
+        .land-hero{ background:var(--md-surface); padding:72px 56px 64px; }
         .land-hero-grid{ position:relative; z-index:1; max-width:1180px; margin:0 auto; display:grid; grid-template-columns:1.05fr 0.95fr; gap:64px; align-items:center; }
         .land-pill{
-          display:inline-flex; align-items:center; gap:8px; background:var(--mint-bg); border:1px solid var(--line);
-          border-radius:100px; padding:6px 14px; font-size:12.5px; font-weight:700; color:var(--forest); margin-bottom:20px;
+          display:inline-flex; align-items:center; gap:8px; background:var(--md-primary-container); border:1px solid var(--md-outline);
+          border-radius:999px; padding:6px 16px; font-size:12.5px; font-weight:700; color:var(--md-on-primary-container); margin-bottom:22px;
         }
         .land-acronym{
-          font-size:11.5px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
-          color:var(--ink-muted); margin:0 0 14px;
+          font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+          color:var(--md-ink-muted); margin:0 0 14px;
         }
-        .land-acronym strong{ color:var(--forest); font-weight:700; }
-        .land-hero h1{ font-size:48px; line-height:1.12; font-weight:800; color:var(--ink-primary); margin:0 0 18px; }
-        .land-hero h1 em{ font-style:normal; color:var(--emerald-dark); }
-        .land-hero p.lead{ font-size:16px; line-height:1.7; color:var(--ink-muted); max-width:520px; margin-bottom:28px; }
-        .land-hero-actions{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px; }
+        .land-acronym strong{ color:var(--md-primary); font-weight:700; }
+        .land-hero h1{ font-size:48px; line-height:1.15; font-weight:800; color:var(--md-ink-primary); margin:0 0 18px; }
+        .land-hero h1 em{ font-style:normal; color:#237562; }
+        .land-hero p.lead{ font-size:16px; line-height:1.7; color:var(--md-ink-muted); max-width:520px; margin-bottom:30px; }
+        .land-hero-actions{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:22px; }
         .land-primary-btn{
-          display:inline-flex; align-items:center; gap:9px; background:var(--forest); color:#fff; border:none; border-radius:12px;
-          padding:14px 24px; font-weight:700; font-size:14px; cursor:pointer; transition:all .18s ease;
+          display:inline-flex; align-items:center; gap:9px; background:var(--md-primary); color:#fff; border:none; border-radius:999px;
+          padding:14px 26px; font-weight:700; font-size:14.5px; cursor:pointer; transition:all .2s ease;
+          box-shadow:0 4px 14px rgba(27,94,80,0.22);
         }
-        .land-primary-btn:hover{ background:var(--forest-dark); transform:translateY(-2px); box-shadow:0 8px 20px rgba(15,81,68,0.25); }
+        .land-primary-btn:hover{ background:var(--md-primary-dark); transform:translateY(-2px); box-shadow:0 6px 20px rgba(27,94,80,0.3); }
         .land-secondary-btn{
-          display:inline-flex; align-items:center; gap:9px; background:#fff; border:1.5px solid var(--line);
-          color:var(--forest); border-radius:12px; padding:14px 24px; font-weight:700; font-size:14px; cursor:pointer; transition:all .18s ease;
+          display:inline-flex; align-items:center; gap:9px; background:#fff; border:1.5px solid var(--md-outline-strong);
+          color:var(--md-primary); border-radius:999px; padding:14px 24px; font-weight:700; font-size:14.5px; cursor:pointer; transition:all .2s ease;
         }
-        .land-secondary-btn:hover{ border-color:var(--forest); transform:translateY(-2px); background:var(--mint-bg); }
-        .land-guest-note{ font-size:13px; color:var(--ink-muted); }
-        .land-guest-note button{ background:none; border:none; color:var(--forest); font-weight:700; cursor:pointer; text-decoration:underline; padding:0; font-size:13px; }
-        .land-trust-row{ display:flex; gap:24px; margin-top:26px; flex-wrap:wrap; }
-        .land-trust-item{ display:flex; align-items:center; gap:7px; font-size:12.5px; font-weight:600; color:var(--ink-muted); }
-        .land-trust-item svg{ color:var(--emerald-dark); flex-shrink:0; }
+        .land-secondary-btn:hover{ border-color:var(--md-primary); transform:translateY(-2px); background:var(--md-surface-container-high); }
+        .land-guest-note{ font-size:13.5px; color:var(--md-ink-muted); }
+        .land-guest-note button{ background:none; border:none; color:var(--md-primary); font-weight:700; cursor:pointer; text-decoration:underline; padding:0; font-size:13.5px; }
+        .land-trust-row{ display:flex; gap:24px; margin-top:28px; flex-wrap:wrap; }
+        .land-trust-item{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; color:var(--md-ink-muted); }
+        .land-trust-item svg{ color:var(--md-primary); flex-shrink:0; }
 
-        /* --- Hero mockup panel --- */
+        /* --- Hero Mockup Panel --- */
         .land-mock{
-          position:relative; z-index:1; background:#fff; border-radius:20px; padding:26px;
-          border:1px solid var(--line); box-shadow:var(--shadow-lg);
+          position:relative; z-index:1; background:#fff; border-radius:24px; padding:28px;
+          border:1px solid var(--md-outline); box-shadow:var(--md-shadow-lg);
         }
-        .land-mock-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; padding-bottom:12px; border-bottom:1px solid var(--line); }
-        .land-mock-head span{ font-size:12.5px; font-weight:700; color:var(--forest); }
-        .land-mock-streams{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+        .land-mock-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--md-outline); }
+        .land-mock-head span{ font-size:13px; font-weight:700; color:var(--md-primary); }
+        .land-mock-streams{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
         .land-mock-chip{
-          display:flex; align-items:center; gap:6px; background:var(--mint-bg); border:1px solid var(--line); border-radius:100px; padding:5px 12px;
-          font-size:11.5px; font-weight:600; color:var(--forest);
+          display:flex; align-items:center; gap:6px; background:var(--md-surface-container-high); border:1px solid var(--md-outline); border-radius:999px; padding:6px 14px;
+          font-size:12px; font-weight:600; color:var(--md-primary);
         }
-        .land-mock-insight{ display:flex; align-items:center; gap:10px; background:#FEF3C7; border:1px solid #FDE68A; border-radius:12px; padding:12px 14px; margin-top:8px; }
+        .land-mock-insight{ display:flex; align-items:center; gap:12px; background:#FFFBEB; border:1px solid #FDE68A; border-radius:16px; padding:14px 16px; margin-top:10px; }
         .land-mock-insight .dot{ width:8px; height:8px; border-radius:50%; background:#D97706; flex-shrink:0; }
         .land-mock-insight > div{ display:flex; flex-direction:column; gap:2px; }
-        .land-mock-insight span{ font-size:12.5px; font-weight:700; color:#92400E; }
-        .land-mock-insight small{ font-weight:500; color:#B45309; font-size:11px; line-height:1.4; }
+        .land-mock-insight span{ font-size:13px; font-weight:700; color:#92400E; }
+        .land-mock-insight small{ font-weight:500; color:#B45309; font-size:11.5px; line-height:1.45; }
 
-        /* --- Stats --- */
+        /* --- Stats Row --- */
         .land-stats{ padding:0 56px 80px; max-width:1180px; margin:0 auto; }
-        .land-stats-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
-        .land-stat{ background:#fff; border-radius:16px; padding:24px 20px; border:1px solid var(--line); box-shadow:var(--shadow-sm); }
-        .land-stat strong{ display:block; font-family:'Sora',sans-serif; font-size:30px; font-weight:800; color:var(--forest); margin-bottom:4px; }
-        .land-stat span{ font-size:12.5px; color:var(--ink-muted); font-weight:500; line-height:1.4; }
+        .land-stats-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; }
+        .land-stat{ background:#fff; border-radius:20px; padding:24px 20px; border:1px solid var(--md-outline); box-shadow:var(--md-shadow-sm); }
+        .land-stat strong{ display:block; font-family:'Sora',sans-serif; font-size:32px; font-weight:800; color:var(--md-primary); margin-bottom:4px; }
+        .land-stat span{ font-size:13px; color:var(--md-ink-muted); font-weight:500; line-height:1.4; }
 
-        /* --- Features --- */
-        .land-features{ background:#FFFFFF; padding:80px 56px; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+        /* --- Features Section --- */
+        .land-features{ background:#FFFFFF; padding:88px 56px; border-top:1px solid var(--md-outline); border-bottom:1px solid var(--md-outline); }
         .land-section-head{ max-width:640px; margin:0 auto 48px; text-align:center; }
-        .land-eyebrow{ font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--emerald-dark); margin-bottom:8px; }
-        .land-section-head h2{ font-size:32px; font-weight:800; color:var(--ink-primary); margin-bottom:12px; }
-        .land-section-head p{ color:var(--ink-muted); font-size:15px; line-height:1.7; }
-        .land-feature-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:20px; max-width:1120px; margin:0 auto; }
+        .land-eyebrow{ font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--md-primary); margin-bottom:8px; }
+        .land-section-head h2{ font-size:32px; font-weight:800; color:var(--md-ink-primary); margin-bottom:12px; }
+        .land-section-head p{ color:var(--md-ink-muted); font-size:15.5px; line-height:1.7; }
+        .land-feature-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; max-width:1120px; margin:0 auto; }
         .land-feature-card{
-          background:var(--sand-bg); border:1px solid var(--line); border-radius:16px; padding:26px 24px;
+          background:var(--md-surface); border:1px solid var(--md-outline); border-radius:20px; padding:28px 24px;
           transition:all .2s ease;
         }
-        .land-feature-card:hover{ transform:translateY(-4px); box-shadow:var(--shadow-md); background:#fff; border-color:var(--emerald); }
+        .land-feature-card:hover{ transform:translateY(-4px); box-shadow:var(--md-shadow-md); background:#fff; border-color:var(--md-primary); }
         .land-feature-icon{
-          width:42px; height:42px; border-radius:10px; display:flex; align-items:center; justify-content:center; margin-bottom:16px;
-          background:var(--mint-light); color:var(--forest);
+          width:44px; height:44px; border-radius:14px; display:flex; align-items:center; justify-content:center; margin-bottom:18px;
+          background:var(--md-primary-container); color:var(--md-on-primary-container);
         }
-        .land-feature-card strong{ display:block; font-family:'Sora',sans-serif; font-weight:700; font-size:15px; color:var(--ink-primary); margin-bottom:6px; }
-        .land-feature-card p{ font-size:13.5px; line-height:1.6; color:var(--ink-muted); margin:0; }
+        .land-feature-card strong{ display:block; font-family:'Sora',sans-serif; font-weight:700; font-size:15.5px; color:var(--md-ink-primary); margin-bottom:6px; }
+        .land-feature-card p{ font-size:13.5px; line-height:1.65; color:var(--md-ink-muted); margin:0; }
 
-        /* --- Pipeline --- */
-        .land-pipeline-sec{ background:var(--sand-bg); padding:80px 56px; }
+        /* --- Pipeline Section --- */
+        .land-pipeline-sec{ background:var(--md-surface); padding:88px 56px; }
         .land-pipeline{ max-width:860px; margin:0 auto; display:flex; flex-direction:column; gap:0; }
-        .land-pipeline-step{ display:flex; gap:24px; padding:24px 0; border-bottom:1px solid var(--line); }
+        .land-pipeline-step{ display:flex; gap:26px; padding:26px 0; border-bottom:1px solid var(--md-outline); }
         .land-pipeline-step:last-child{ border-bottom:none; }
         .land-pipeline-num{
-          flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#fff; border:1.5px solid var(--line); color:var(--forest);
+          flex-shrink:0; width:48px; height:48px; border-radius:14px; background:#fff; border:1.5px solid var(--md-outline); color:var(--md-primary);
           display:flex; align-items:center; justify-content:center; font-family:'Sora',sans-serif; font-weight:800; font-size:15px;
         }
-        .land-pipeline-step h3{ color:var(--ink-primary); font-size:16.5px; margin-bottom:5px; font-weight:700; }
-        .land-pipeline-step p{ color:var(--ink-muted); font-size:14px; line-height:1.65; margin:0; }
+        .land-pipeline-step h3{ color:var(--md-ink-primary); font-size:17px; margin-bottom:6px; font-weight:700; }
+        .land-pipeline-step p{ color:var(--md-ink-muted); font-size:14.5px; line-height:1.65; margin:0; }
 
         /* --- Final CTA --- */
-        .land-final-wrap{ padding:20px 24px 40px; }
+        .land-final-wrap{ padding:20px 24px 44px; }
         .land-final-cta{
-          background:linear-gradient(140deg, var(--forest-dark) 0%, var(--forest) 100%);
-          border-radius:24px; padding:64px 48px; text-align:center; max-width:1180px; margin:0 auto;
-          box-shadow:var(--shadow-lg);
+          background:linear-gradient(140deg, var(--md-primary-dark) 0%, var(--md-primary) 100%);
+          border-radius:28px; padding:68px 48px; text-align:center; max-width:1180px; margin:0 auto;
+          box-shadow:var(--md-shadow-lg);
         }
         .land-final-cta h2{ color:#fff; font-size:32px; margin-bottom:12px; font-weight:800; }
-        .land-final-cta p{ color:rgba(230,244,241,0.85); font-size:15px; margin-bottom:28px; max-width:540px; margin-left:auto; margin-right:auto; }
+        .land-final-cta p{ color:rgba(235,246,242,0.9); font-size:15.5px; margin-bottom:30px; max-width:540px; margin-left:auto; margin-right:auto; line-height:1.6; }
         .land-final-actions{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
-        .land-final-cta .land-primary-btn{ background:var(--emerald); color:#fff; }
-        .land-final-cta .land-primary-btn:hover{ background:#059669; }
-        .land-final-cta .land-secondary-btn{ background:transparent; border-color:rgba(255,255,255,0.3); color:#fff; }
+        .land-final-cta .land-primary-btn{ background:#D6EDE5; color:var(--md-on-primary-container); font-weight:800; }
+        .land-final-cta .land-primary-btn:hover{ background:#fff; }
+        .land-final-cta .land-secondary-btn{ background:transparent; border-color:rgba(255,255,255,0.35); color:#fff; }
         .land-final-cta .land-secondary-btn:hover{ background:rgba(255,255,255,0.1); border-color:#fff; }
 
         /* --- Footer --- */
-        .land-footer{ background:var(--forest-dark); padding:48px 56px 24px; color:#E6F4F1; }
-        .land-footer-top{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:32px; max-width:1180px; margin:0 auto 36px; }
+        .land-footer{ background:var(--md-primary-dark); padding:52px 56px 28px; color:#E8F4F0; }
+        .land-footer-top{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:36px; max-width:1180px; margin:0 auto 36px; }
         .land-footer .land-brand{ color:#fff; margin-bottom:8px; }
-        .land-footer-top p{ font-size:12.5px; color:rgba(230,244,241,0.65); max-width:320px; line-height:1.6; margin:0; }
+        .land-footer-top p{ font-size:13px; color:rgba(235,246,242,0.7); max-width:320px; line-height:1.65; margin:0; }
         .land-footer-links{ display:flex; gap:48px; flex-wrap:wrap; }
         .land-footer-links div strong{ display:block; font-size:11.5px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#A7F3D0; margin-bottom:12px; }
-        .land-footer-links a{ display:block; color:rgba(230,244,241,0.75); font-size:13.5px; text-decoration:none; margin-bottom:8px; font-weight:500; }
+        .land-footer-links a{ display:block; color:rgba(235,246,242,0.8); font-size:13.5px; text-decoration:none; margin-bottom:8px; font-weight:500; }
         .land-footer-links a:hover{ color:#fff; }
-        .land-footer-bottom{ border-top:1px solid rgba(255,255,255,0.1); padding-top:20px; max-width:1180px; margin:0 auto; display:flex; justify-content:space-between; font-size:12px; color:rgba(230,244,241,0.5); }
+        .land-footer-bottom{ border-top:1px solid rgba(255,255,255,0.1); padding-top:20px; max-width:1180px; margin:0 auto; display:flex; justify-content:space-between; font-size:12.5px; color:rgba(235,246,242,0.55); }
 
         .reveal{ opacity:0; transform:translateY(20px); transition:opacity .5s ease, transform .5s ease; }
         .reveal.in{ opacity:1; transform:translateY(0); }
@@ -301,18 +305,18 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
       {/* Navigation */}
       <nav className="land-nav">
         <div className="land-brand" title="Nurturing Agentic Responsive Intelligence">
-          <span className="land-brand-mark"><HeartPulse size={16} /></span>
+          <span className="land-brand-mark"><HeartPulse size={17} /></span>
           NARI
         </div>
         <div className="land-nav-links">
           <a href="#features">Features</a>
-          <a href="#how-it-works">How it works</a>
-          <a href="#evidence">Evidence &amp; Clinical Safety</a>
+          <a href="#how-it-works">How It Works</a>
+          <a href="#evidence">Clinical Guidelines</a>
         </div>
         <div className="land-nav-actions">
-          <button className="land-link-btn" onClick={onSignIn}>Sign in</button>
+          <button className="land-link-btn" onClick={onSignIn}>Sign In</button>
           <button className="land-cta-btn" onClick={onGetStarted}>
-            Get started <ArrowRight size={14} />
+            Get Started <ArrowRight size={14} />
           </button>
         </div>
       </nav>
@@ -322,37 +326,37 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
         <div className="land-hero-grid">
           <div>
             <div className="land-pill">
-              <ShieldCheck size={14} /> Grounded in Clinical Guidelines
+              <ShieldCheck size={15} /> Grounded in Certified Clinical Guidelines
             </div>
             <div className="land-acronym">
               <strong>NARI</strong> — Nurturing Agentic Responsive Intelligence
             </div>
-            <h1>Continuous, intelligent health care <em>tailored for women</em>.</h1>
+            <h1>Gentle, evidence-grounded health care <em>tailored for women</em>.</h1>
             <p className="lead">
-              NARI unifies your menstrual cycle signals, pathology reports, Google Fit wearables, and lifestyle data into an explainable, evidence-backed care companion.
+              A peaceful, supportive space that unifies your menstrual patterns, lab reports, and Google Fit metrics into clear, comforting clinical insights.
             </p>
             <div className="land-hero-actions">
               <button className="land-primary-btn" onClick={onGetStarted}>
-                Start your health profile <ArrowRight size={15} />
+                Begin Your Health Profile <ArrowRight size={15} />
               </button>
               <button className="land-secondary-btn" onClick={onSignIn}>
-                Sign in to account
+                Sign In to Account
               </button>
             </div>
             {onGuest && (
               <div className="land-guest-note">
-                Want to test first? <button type="button" onClick={onGuest}>Explore in Guest Mode</button>
+                Want to explore first? <button type="button" onClick={onGuest}>Continue in Guest Mode</button>
               </div>
             )}
             <div className="land-trust-row">
-              <div className="land-trust-item"><ShieldCheck size={15} /> WHO &amp; MoHFW Grounding</div>
+              <div className="land-trust-item"><ShieldCheck size={15} /> WHO &amp; MoHFW Grounded</div>
               <div className="land-trust-item"><Lock size={15} /> Private &amp; Client-Isolated</div>
             </div>
           </div>
 
           <div className="land-mock">
             <div className="land-mock-head">
-              <span>Digital Health Twin Preview</span>
+              <span>Digital Health Twin</span>
               <div className="land-mock-chip"><Activity size={12} /> Cycle Day 18 (Luteal)</div>
             </div>
             <HeroRing lengths={DEMO_RING} />
@@ -363,8 +367,8 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
             <div className="land-mock-insight">
               <span className="dot" />
               <div>
-                <span>Clinical Pattern Flag (L2)</span>
-                <small>11-day cycle variance with low ferritin detected. Recommended for clinician review.</small>
+                <span>Clinical Observation (L2)</span>
+                <small>11-day cycle variance with lower ferritin observed. Recommended for gentle clinician review.</small>
               </div>
             </div>
           </div>
@@ -387,8 +391,8 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
       <section className="land-features" id="features">
         <div className="land-section-head">
           <div className="land-eyebrow">Integrated Health Platform</div>
-          <h2>Designed for the full spectrum of women's health</h2>
-          <p>From daily cycle tracking to complex lab report parsing, NARI bridges the gap between patient symptoms and clinical insight.</p>
+          <h2>Thoughtful care across every stage of your life</h2>
+          <p>From cycle tracking to pathology lab report explanations, NARI brings peace of mind through clear medical reasoning.</p>
         </div>
         <div className="land-feature-grid">
           {INPUT_STREAMS.map((item, i) => {
@@ -408,8 +412,8 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
       <section className="land-pipeline-sec" id="how-it-works">
         <div className="land-section-head">
           <div className="land-eyebrow">Agentic Architecture</div>
-          <h2>How NARI reasons through health signals</h2>
-          <p>A multi-agent care pipeline processes each turn with transparency, safety escalation, and clinical grounding.</p>
+          <h2>How NARI reasons through your health questions</h2>
+          <p>Every consultation passes through dedicated safety checks, specialist clinical nodes, and verified guideline retrieval.</p>
         </div>
         <div className="land-pipeline">
           {PIPELINE.map((p, i) => (
@@ -427,8 +431,8 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
       {/* Final CTA */}
       <div className="land-final-wrap">
         <div className="land-final-cta">
-          <h2>Experience intelligent women's health care</h2>
-          <p>Join NARI to start tracking your symptoms, interpreting pathology reports, and accessing evidence-backed care guidance.</p>
+          <h2>Experience supportive, evidence-grounded care</h2>
+          <p>Join NARI to start tracking symptoms, understanding lab results, and getting evidence-backed care guidance designed for peace of mind.</p>
           <div className="land-final-actions">
             <button className="land-primary-btn" onClick={onGetStarted}>
               Get Started Now <ArrowRight size={15} />
@@ -454,14 +458,14 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest }) {
             <div>
               <strong>Navigation</strong>
               <a href="#features">Features</a>
-              <a href="#how-it-works">How it works</a>
-              <a href="#evidence">Clinical Guidelines</a>
+              <a href="#how-it-works">How It Works</a>
+              <a href="#evidence">Clinical Protocols</a>
             </div>
             <div>
               <strong>Account</strong>
-              <a href="#" onClick={(e) => { e.preventDefault(); onSignIn(); }}>Sign in</a>
-              <a href="#" onClick={(e) => { e.preventDefault(); onGetStarted(); }}>Create account</a>
-              <a href="#" onClick={(e) => { e.preventDefault(); onGuest(); }}>Guest mode</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); onSignIn(); }}>Sign In</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); onGetStarted(); }}>Create Account</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); onGuest(); }}>Guest Mode</a>
             </div>
           </div>
         </div>
