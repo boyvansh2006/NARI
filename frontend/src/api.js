@@ -162,3 +162,15 @@ export async function getActivityHistory(days = 7) {
   const res = await fetch(`${API_BASE}/api/v1/activity/history?days=${days}`, { headers: authHeaders() });
   return handleJson(res);
 }
+export async function getGoogleFitStatus() {
+  const res = await fetch(`${API_BASE}/api/v1/googlefit/status`, { headers: authHeaders() });
+  return handleJson(res); // { connected }
+}
+export async function getGoogleFitAuthUrl() {
+  const res = await fetch(`${API_BASE}/api/v1/googlefit/connect`, { headers: authHeaders() });
+  return handleJson(res); // { auth_url }
+}
+export async function syncGoogleFit() {
+  const res = await fetch(`${API_BASE}/api/v1/googlefit/sync`, { method: "POST", headers: authHeaders() });
+  return handleJson(res); // updated ActivityLogRead
+}

@@ -1,6 +1,5 @@
 import React from "react";
-
-const STATUS_COLOR = { HIGH: "#F5A6C2", LOW: "#F6C453", NORMAL: "#8FD6C4", UNSPECIFIED: "#C9B8EA" };
+const STATUS_COLOR = { HIGH: "#E2795B", LOW: "#E7C36B", NORMAL: "#149E6C", UNSPECIFIED: "#8FE3C0" };
 
 /** Renders a horizontal bar per biomarker, colored by status, with the
  * numeric value labeled. Purely illustrative (not to clinical scale —

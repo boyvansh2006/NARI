@@ -399,3 +399,10 @@ class DailyActivityLog(Base):
     weight: Mapped[str | None] = mapped_column(String(20), nullable=True)
     meals: Mapped[list] = mapped_column(JSON, default=list)  # [{"text": "...", "time": "..."}]
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    class GoogleFitToken(Base):
+     patient_id: Mapped[uuid.UUID] = mapped_column(GUID(), ForeignKey("users.id"), primary_key=True)
+     access_token: Mapped[str] = mapped_column(Text, nullable=False)
+     refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

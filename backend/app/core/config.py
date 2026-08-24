@@ -93,6 +93,11 @@ class Settings(BaseModel):
         if aarogya_path.exists() and not nari_path.exists():
             return aarogya_path
         return nari_path
+    # Google Fit OAuth (https://console.cloud.google.com/apis/credentials)
+    google_fit_client_id: str = Field(default="")
+    google_fit_client_secret: str = Field(default="")
+    google_fit_redirect_uri: str = Field(default="http://127.0.0.1:8000/api/v1/googlefit/callback")
+    frontend_base_url: str = Field(default="http://localhost:5173")
 
 
 @lru_cache(maxsize=1)
@@ -105,6 +110,10 @@ def get_settings() -> Settings:
         cors_origins_raw=os.getenv(
             "CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
         ),
+        google_fit_client_id=os.getenv("GOOGLE_FIT_CLIENT_ID", ""),
+        google_fit_client_secret=os.getenv("GOOGLE_FIT_CLIENT_SECRET", ""),
+        google_fit_redirect_uri=os.getenv("GOOGLE_FIT_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/googlefit/callback"),
+        frontend_base_url=os.getenv("FRONTEND_BASE_URL", "http://localhost:5173"),
         log_level=os.getenv("LOG_LEVEL", "INFO"),
         max_upload_size_mb=int(os.getenv("MAX_UPLOAD_SIZE_MB", "25")),
         request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "120")),
@@ -127,4 +136,7 @@ def get_settings() -> Settings:
         piper_voice_config=os.getenv("PIPER_VOICE_CONFIG", ""),
         ollama_host=os.getenv("OLLAMA_HOST", ""),
         ollama_model=os.getenv("OLLAMA_MODEL", ""),
+
     )
+
+   
