@@ -15,6 +15,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.api.activity import router as activity_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
+from app.api.google_fit import router as google_fit_router
 from app.api.reminders import router as reminders_router
 from app.api.reports import router as reports_router
 from app.api.voice import router as voice_router
@@ -146,3 +147,4 @@ app.include_router(reports_router)
 app.include_router(voice_router)
 app.include_router(reminders_router)
 app.include_router(activity_router)
+app.include_router(google_fit_router)
