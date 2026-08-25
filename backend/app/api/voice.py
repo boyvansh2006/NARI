@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import EmptyTranscriptError
 from app.core.logging import get_logger
 from app.database.database import get_db_session
-from app.schemas.chat import ChatHistoryItem
+from app.schemas.chat import ChatHistoryItem, HealthProfile
 from app.schemas.voice import VoiceConverseResponse, VoiceStatusResponse
 from app.services import agent_service
 from app.services.voice_service import get_voice_service
@@ -38,6 +38,7 @@ async def voice_converse(
     transcript: str | None = Form(default=None),
     history_json: str = Form(default="[]"),
     patient_id: str | None = Form(default=None),
+    language: str | None = Form(default=None),
     session: AsyncSession = Depends(get_db_session),
 ) -> VoiceConverseResponse:
     """
@@ -50,6 +51,11 @@ async def voice_converse(
     `history_json` is the same recentHistoryPayload() shape the text /chat
     endpoint uses, JSON-encoded because multipart/form-data can't carry
     structured fields directly.
+    `language` is the frontend's currently-selected UI language code
+    (e.g. "hi", "ta" - see i18n.js's SUPPORTED_LANGUAGES). BUG FIX: this
+    field didn't exist before, so server-side STT always forced English
+    decoding (see voice_service.transcribe) and the LLM was never told
+    which language to reply in for voice turns - both are fixed below.
 
     The transcribed/given text is routed through the same
     services.agent_service.run_turn() the text chat endpoint uses (the
@@ -69,13 +75,20 @@ async def voice_converse(
     text = (transcript or "").strip()
 
     if not text and audio is not None:
-        text = await _transcribe_upload(service, audio)
+        text = await _transcribe_upload(service, audio, language=language)
 
     if not text:
         raise EmptyTranscriptError()
 
+    # BUG FIX: this used to call run_turn() with no `profile` at all, so
+    # voice replies never got the "Language Directive" that text /chat
+    # sends (see agents/nodes.py's _build_agent_messages) and always came
+    # back in English even when the browser-side transcript/audio was in
+    # another language.
+    profile = HealthProfile(language_preference=language) if language else None
+
     result = await agent_service.run_turn(
-        session=session, message=text, patient_id=patient_id, history=history
+        session=session, message=text, patient_id=patient_id, history=history, profile=profile
     )
 
     audio_base64: str | None = None
@@ -96,7 +109,7 @@ async def voice_converse(
     )
 
 
-async def _transcribe_upload(service, audio: UploadFile) -> str:
+async def _transcribe_upload(service, audio: UploadFile, language: str | None = None) -> str:
     """Writes the uploaded audio blob to a temp file (faster-whisper's
     transcribe() takes a path) and runs STT off the event loop."""
     suffix = Path(audio.filename or "utterance.webm").suffix or ".webm"
@@ -107,7 +120,7 @@ async def _transcribe_upload(service, audio: UploadFile) -> str:
         tmp_path = Path(tmp_file.name)
 
     try:
-        result = await asyncio.to_thread(service.transcribe, tmp_path)
+        result = await asyncio.to_thread(service.transcribe, tmp_path, language)
         return (result or "").strip()
     finally:
         tmp_path.unlink(missing_ok=True)

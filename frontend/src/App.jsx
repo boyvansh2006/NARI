@@ -247,39 +247,39 @@ function GuestNameGate({ value, onChange, onConfirm, onCancel, lang }) {
       <style>{`
         .guest-gate-shell{
           min-height:100vh; display:flex; align-items:center; justify-content:center;
-          background:linear-gradient(150deg,#144D42 0%,#1B5E50 60%,#236D5E 100%);
+          background:linear-gradient(150deg,#02182E 0%,#022F56 60%,#234D6D 100%);
           font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; padding:24px;
         }
         .guest-gate-shell *{ box-sizing:border-box; }
         .guest-gate-card{
           background:#fff; border-radius:24px; padding:38px 36px; width:100%; max-width:400px;
-          box-shadow:0 16px 40px rgba(20,77,66,0.25); text-align:center; animation: guest-rise .3s ease;
-          border:1px solid #E0EAE5;
+          box-shadow:0 16px 40px rgba(2,24,46,0.25); text-align:center; animation: guest-rise .3s ease;
+          border:1px solid #E0E8EA;
         }
         @keyframes guest-rise{ from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:translateY(0);} }
         .guest-gate-mark{
           width:56px; height:56px; border-radius:18px; margin:0 auto 20px;
-          background:#D6EDE5; color:#06332A; display:flex; align-items:center; justify-content:center;
+          background:#CCDEE4; color:#061D33; display:flex; align-items:center; justify-content:center;
         }
         .guest-gate-card h2{
-          font-family:'Sora',sans-serif; font-size:23px; font-weight:800; color:#0D2C24; margin:0 0 8px;
+          font-family:'Sora',sans-serif; font-size:23px; font-weight:800; color:#0D1D2C; margin:0 0 8px;
         }
-        .guest-gate-card p{ color:#4E6D64; font-size:14px; line-height:1.65; margin:0 0 24px; }
+        .guest-gate-card p{ color:#4E606D; font-size:14px; line-height:1.65; margin:0 0 24px; }
         .guest-gate-input{
-          width:100%; border:1.5px solid #D5E2DC; border-radius:999px; padding:13px 18px;
+          width:100%; border:1.5px solid #D5DFE2; border-radius:999px; padding:13px 18px;
           font-size:14px; font-family:inherit; outline:none; margin-bottom:20px; text-align:center;
-          background:#FBFDFB; transition:border-color .2s ease, box-shadow .2s ease;
+          background:#FBFDFD; transition:border-color .2s ease, box-shadow .2s ease;
         }
-        .guest-gate-input:focus{ border-color:#1B5E50; background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.12); }
+        .guest-gate-input:focus{ border-color:#022F56; background:#fff; box-shadow:0 0 0 3px rgba(2,47,86,0.12); }
         .guest-gate-actions{ display:flex; flex-direction:column; gap:10px; }
         .guest-gate-confirm{
-          width:100%; background:#1B5E50; color:#fff; border:none; border-radius:999px;
+          width:100%; background:#022F56; color:#fff; border:none; border-radius:999px;
           padding:14px 0; font-family:'Sora',sans-serif; font-weight:700; font-size:14.5px;
-          cursor:pointer; transition:all .18s ease; box-shadow:0 2px 10px rgba(27,94,80,0.2);
+          cursor:pointer; transition:all .18s ease; box-shadow:0 2px 10px rgba(2,47,86,0.2);
         }
-        .guest-gate-confirm:hover{ background:#144D42; transform:translateY(-1px); }
+        .guest-gate-confirm:hover{ background:#02182E; transform:translateY(-1px); }
         .guest-gate-back{
-          width:100%; background:none; border:none; color:#4E6D64; font-size:13px; font-weight:600; cursor:pointer;
+          width:100%; background:none; border:none; color:#4E606D; font-size:13px; font-weight:600; cursor:pointer;
           padding:6px 0;
         }
       `}</style>
@@ -353,6 +353,8 @@ export default function App() {
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
   const inputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
 
   useEffect(() => {
     localStorage.setItem("nari_lang", lang);
@@ -458,27 +460,87 @@ export default function App() {
     }
   };
 
-  const speak = (text) => {
+  // BUG FIX: getVoices() commonly returns an empty array on the very
+  // first call after a page load in Chrome - the voice list loads
+  // asynchronously and only the 'voiceschanged' event tells you it's
+  // ready. Previously we just read getVoices() synchronously once, so
+  // the first "speak" of a session (or a page that hadn't had a chance
+  // to preload voices yet) had nothing to pick from and silently fell
+  // back to a bare `lang` code with whatever default voice the browser
+  // happened to have on hand. This resolves once the list is actually
+  // populated, waiting briefly for 'voiceschanged' if needed.
+  const getVoicesAsync = () =>
+    new Promise((resolve) => {
+      const existing = window.speechSynthesis.getVoices();
+      if (existing.length > 0) {
+        resolve(existing);
+        return;
+      }
+      const onChange = () => {
+        window.speechSynthesis.removeEventListener("voiceschanged", onChange);
+        resolve(window.speechSynthesis.getVoices());
+      };
+      window.speechSynthesis.addEventListener("voiceschanged", onChange);
+      // Some browsers never fire voiceschanged (e.g. voices were already
+      // cached) - don't hang forever waiting for it.
+      setTimeout(() => {
+        window.speechSynthesis.removeEventListener("voiceschanged", onChange);
+        resolve(window.speechSynthesis.getVoices());
+      }, 300);
+    });
+
+  const speak = async (text) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     try {
       window.speechSynthesis.cancel();
-      setTimeout(() => {
-        window.speechSynthesis.resume();
-        const clean = text.replace(/[*#_`>]/g, " ").trim();
-        const utt = new SpeechSynthesisUtterance(clean);
-        utt.rate = 0.96;
-        utt.pitch = 1.02;
-        const voices = window.speechSynthesis.getVoices();
-        const chosenVoice = pickVoiceForLanguage(voices, lang);
-        if (chosenVoice) {
-          utt.voice = chosenVoice;
-          utt.lang = chosenVoice.lang;
-        } else {
-          const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
-          if (currentLangObj) utt.lang = currentLangObj.speechCode;
+      const voices = await getVoicesAsync();
+      // cancel() needs a beat to actually clear the queue in Chrome before
+      // a new speak() reliably starts - see https://bugs.chromium.org/p/chromium/issues/detail?id=1173696
+      await new Promise((r) => setTimeout(r, 70));
+
+      const clean = text.replace(/[*#_`>]/g, " ").trim();
+      const utt = new SpeechSynthesisUtterance(clean);
+      utt.rate = 0.96;
+      utt.pitch = 1.02;
+      const chosenVoice = pickVoiceForLanguage(voices, lang);
+      if (chosenVoice) {
+        utt.voice = chosenVoice;
+        utt.lang = chosenVoice.lang;
+      } else {
+        const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
+        if (currentLangObj) utt.lang = currentLangObj.speechCode;
+      }
+
+      // BUG FIX ("TTS is broken"): Chrome has a long-standing bug where
+      // speechSynthesis silently stops mid-utterance after ~15 seconds of
+      // continuous speech (chromium bug 679437) - which any multi-sentence
+      // clinical reply will easily exceed. A single resume() call before
+      // speaking (the old code) does nothing to prevent this, since the
+      // cutoff happens *during* playback. The documented workaround is to
+      // pause()/resume() on an interval shorter than 15s for the whole
+      // duration of the utterance, which resets Chrome's internal timer.
+      let keepAlive = null;
+      const clearKeepAlive = () => {
+        if (keepAlive) {
+          clearInterval(keepAlive);
+          keepAlive = null;
         }
-        window.speechSynthesis.speak(utt);
-      }, 70);
+      };
+      utt.onstart = () => {
+        clearKeepAlive();
+        keepAlive = setInterval(() => {
+          if (!window.speechSynthesis.speaking) {
+            clearKeepAlive();
+            return;
+          }
+          window.speechSynthesis.pause();
+          window.speechSynthesis.resume();
+        }, 10000);
+      };
+      utt.onend = clearKeepAlive;
+      utt.onerror = clearKeepAlive;
+
+      window.speechSynthesis.speak(utt);
     } catch {
       /* ignore */
     }
@@ -570,30 +632,135 @@ export default function App() {
     showToast(t("new_chat"));
   };
 
-  const toggleListening = () => {
+  const handleVoiceTurn = async (audioBlob) => {
+    setIsTyping(true);
+    try {
+      const historyPayload = messages.map((m) => ({
+        role: m.sender === "assistant" ? "assistant" : "user",
+        content: m.text,
+      }));
+      const res = await voiceConverse({ audioBlob, history: historyPayload, language: lang });
+
+      setMessages((prev) => [...prev, { id: Date.now(), sender: "user", text: res.transcript }]);
+      const assistantMsg = {
+        id: Date.now() + 1,
+        sender: "assistant",
+        agent: res.agent || "NARI",
+        text: res.reply,
+        urgent: !!res.urgent,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+
+      if (res.risk_signal) setSessionRiskSignals((prev) => [res.risk_signal, ...prev]);
+      if (res.care_plan) setSessionCarePlan(res.care_plan);
+
+      if (speakEnabled) {
+        if (res.audio_base64) {
+          const audio = new Audio(`data:audio/${res.audio_format || "wav"};base64,${res.audio_base64}`);
+          audio.play().catch(() => {});
+        } else {
+          speak(res.reply);
+        }
+      }
+    } catch (err) {
+      // EmptyTranscriptError etc. arrive here with a readable `detail` from the backend
+      // (see app/core/exceptions.py) - fall back to a generic message for network/other failures.
+      setVoiceError(err?.message || "Voice input failed - please try again or type your message.");
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const toggleListening = async () => {
     if (isListening) {
       setIsListening(false);
-      recognitionRef.current?.stop();
-    } else {
-      if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) return;
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const rec = new SpeechRecognition();
-      rec.continuous = false;
-      rec.interimResults = false;
-      const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
-      rec.lang = currentLangObj ? currentLangObj.speechCode : "en-IN";
-      
-      rec.onresult = (e) => {
-        const transcript = e.results[0][0].transcript;
-        setInput(transcript);
-        setIsListening(false);
-      };
-      rec.onerror = () => setIsListening(false);
-      rec.onend = () => setIsListening(false);
-      recognitionRef.current = rec;
-      rec.start();
-      setIsListening(true);
+      if (useServerStt && mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop(); // fires onstop below, which sends the recorded blob
+      } else {
+        recognitionRef.current?.stop();
+      }
+      return;
     }
+
+    setVoiceError(null);
+
+    if (useServerStt) {
+      // Server-side Whisper STT is configured (see /api/v1/voice/status) - actually record
+      // audio and send it to /api/v1/voice/converse instead of relying on the browser's
+      // built-in recognizer, which is what useServerStt is meant to select.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setVoiceError("Microphone access isn't available in this browser.");
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mimeType = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+        audioChunksRef.current = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        recorder.onstop = () => {
+          stream.getTracks().forEach((track) => track.stop());
+          const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+          if (blob.size > 0) {
+            handleVoiceTurn(blob);
+          } else {
+            setVoiceError("I didn't catch that - please try again.");
+          }
+        };
+        recorder.onerror = () => {
+          setVoiceError("Recording failed - please check your microphone and try again.");
+          setIsListening(false);
+        };
+
+        mediaRecorderRef.current = recorder;
+        recorder.start();
+        setIsListening(true);
+      } catch (err) {
+        setVoiceError(
+          err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
+            ? "Microphone access was blocked. Please allow microphone permission and try again."
+            : "Couldn't access the microphone - please try again."
+        );
+      }
+      return;
+    }
+
+    // Fallback: browser's built-in SpeechRecognition (used when the server has no STT configured).
+    if (!("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+      setVoiceError("Voice input isn't supported in this browser - try Chrome, or type your message instead.");
+      return;
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = false;
+    const currentLangObj = SUPPORTED_LANGUAGES.find((l) => l.code === lang);
+    rec.lang = currentLangObj ? currentLangObj.speechCode : "en-IN";
+
+    rec.onresult = (e) => {
+      const transcript = e.results[0][0].transcript;
+      setInput(transcript);
+      setIsListening(false);
+    };
+    rec.onerror = (e) => {
+      setIsListening(false);
+      const ERROR_MESSAGES = {
+        "no-speech": "I didn't catch that - please try again.",
+        "not-allowed": "Microphone access was blocked. Please allow microphone permission and try again.",
+        "audio-capture": "No microphone was found - please check your device and try again.",
+        network: "Voice recognition needs an internet connection - please check yours and try again.",
+      };
+      setVoiceError(ERROR_MESSAGES[e.error] || "Voice input didn't work - please try again or type your message.");
+    };
+    rec.onend = () => setIsListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setIsListening(true);
   };
 
   const handleFile = async (file) => {
@@ -693,25 +860,25 @@ export default function App() {
       <style>{`
         :root{
           color-scheme: light;
-          --md-primary: #1B5E50;
-          --md-primary-dark: #144D42;
-          --md-primary-container: #D6EDE5;
-          --md-on-primary-container: #06332A;
-          --md-surface: #F7FAF8;
+          --md-primary: #022F56;
+          --md-primary-dark: #02182E;
+          --md-primary-container: #CCDEE4;
+          --md-on-primary-container: #061D33;
+          --md-surface: #F7F9FA;
           --md-surface-container: #FFFFFF;
-          --md-surface-container-high: #EDF5F1;
-          --md-ink-primary: #0D2C24;
-          --md-ink-secondary: #1E3A34;
-          --md-ink-muted: #4E6D64;
-          --md-outline: #E0EAE5;
-          --md-outline-strong: #D5E2DC;
+          --md-surface-container-high: #EDF3F5;
+          --md-ink-primary: #0D1D2C;
+          --md-ink-secondary: #1E2D3A;
+          --md-ink-muted: #4E606D;
+          --md-outline: #E0E8EA;
+          --md-outline-strong: #D5DFE2;
           --md-amber-container: #FFFBEB;
           --md-amber-on-container: #92400E;
           --md-amber-border: #FDE68A;
           --font-head: 'Sora', sans-serif;
           --font-body: 'Plus Jakarta Sans', 'DM Sans', -apple-system, sans-serif;
-          --shadow-card: 0 1px 3px rgba(0,0,0,0.03), 0 4px 14px rgba(27,94,80,0.05);
-          --shadow-soft: 0 6px 22px rgba(27,94,80,0.07);
+          --shadow-card: 0 1px 3px rgba(0,0,0,0.03), 0 4px 14px rgba(2,47,86,0.05);
+          --shadow-soft: 0 6px 22px rgba(2,47,86,0.07);
         }
 
         .app-shell{ color-scheme: light; }
@@ -735,7 +902,7 @@ export default function App() {
         .brand{ display:flex; align-items:center; gap:10px; font-family:var(--font-head); font-weight:800; font-size:19px; padding:0 8px 26px; color:var(--md-primary); }
         .brand-mark{
           width:30px; height:30px; border-radius:10px; background:var(--md-primary);
-          display:flex; align-items:center; justify-content:center; color:#E8F4F0; flex-shrink:0;
+          display:flex; align-items:center; justify-content:center; color:#E8F1F4; flex-shrink:0;
         }
         .sidebar-nav{ display:flex; flex-direction:column; gap:4px; flex:1; }
         .nav-item{
@@ -744,7 +911,7 @@ export default function App() {
           transition:all .18s ease;
         }
         .nav-item:hover{ background:var(--md-surface-container-high); color:var(--md-primary); }
-        .nav-item.active{ background:var(--md-primary); color:#fff; box-shadow:0 2px 8px rgba(27,94,80,0.2); }
+        .nav-item.active{ background:var(--md-primary); color:#fff; box-shadow:0 2px 8px rgba(2,47,86,0.2); }
         .nav-section-label{ padding:16px 14px 4px; font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--md-ink-muted); opacity:0.75; }
         .nav-item-secondary{ font-size:13px; padding:9px 14px; }
 
@@ -758,7 +925,7 @@ export default function App() {
         .user-sub{ font-size:11.5px; color:var(--md-ink-muted); }
         .signout-btn{
           display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:999px;
-          border:1px solid var(--md-outline); background:#FAFCFB; color:var(--md-ink-muted); font-size:12px; font-weight:600;
+          border:1px solid var(--md-outline); background:#FAFCFC; color:var(--md-ink-muted); font-size:12px; font-weight:600;
           transition:all .15s ease;
         }
         .signout-btn:hover{ background:#FDF2F2; color:#991B1B; border-color:#F9D5D5; }
@@ -767,7 +934,7 @@ export default function App() {
         .main-col{ flex:1; display:flex; flex-direction:column; min-width:0; margin-left:240px; }
         .topbar{
           display:flex; align-items:center; justify-content:space-between; padding:16px 36px;
-          border-bottom:1px solid var(--md-outline); background:rgba(247,250,248,0.92); backdrop-filter:blur(8px);
+          border-bottom:1px solid var(--md-outline); background:rgba(247,249,250,0.92); backdrop-filter:blur(8px);
           position:sticky; top:0; z-index:9;
         }
         .topbar-title{ font-family:var(--font-head); font-weight:700; font-size:18px; color:var(--md-ink-primary); }
@@ -821,19 +988,19 @@ export default function App() {
         .toast{
           position:fixed; bottom:24px; right:24px; background:var(--md-primary-dark); color:#fff;
           padding:12px 20px; border-radius:999px; display:flex; align-items:center; gap:8px;
-          font-size:13px; font-weight:600; box-shadow:0 8px 24px rgba(20,77,66,0.3); z-index:30; animation:rise .2s ease;
+          font-size:13px; font-weight:600; box-shadow:0 8px 24px rgba(2,24,46,0.3); z-index:30; animation:rise .2s ease;
         }
         @keyframes rise{ from{opacity:0; transform:translateY(8px);} to{opacity:1; transform:translateY(0);} }
 
         /* Dashboard Overview Card */
         .welcome-card{
-          background:linear-gradient(150deg, #144D42 0%, #1B5E50 100%); color:#fff; border-radius:24px; padding:30px 34px;
+          background:linear-gradient(150deg, #02182E 0%, #022F56 100%); color:#fff; border-radius:24px; padding:30px 34px;
           display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px; margin-bottom:26px;
           box-shadow:var(--shadow-card);
         }
-        .eyebrow-sm{ font-family:var(--font-head); font-weight:700; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#A7D9C9; margin:0 0 4px; }
+        .eyebrow-sm{ font-family:var(--font-head); font-weight:700; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#A7CBD9; margin:0 0 4px; }
         .welcome-card h1{ color:#fff; font-size:25px; font-weight:800; }
-        .muted{ color:rgba(235,246,242,0.9); font-size:14px; margin-top:5px; }
+        .muted{ color:rgba(235,244,246,0.9); font-size:14px; margin-top:5px; }
         .quick-actions{ display:flex; gap:10px; flex-wrap:wrap; }
         .qa-btn{
           display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:999px;
@@ -851,7 +1018,7 @@ export default function App() {
         }
         .stat-card:hover{ border-color:var(--md-primary); transform:translateY(-2px); box-shadow:var(--shadow-soft); }
         .stat-icon.purple{ color:var(--md-primary); }
-        .stat-icon.teal{ color:#2A856A; }
+        .stat-icon.teal{ color:#2A5F85; }
         .stat-icon.rose{ color:#C27B2B; }
         .stat-icon.violet{ color:var(--md-ink-primary); }
         .stat-label{ font-size:12.5px; font-weight:600; color:var(--md-ink-muted); margin-top:10px; }
@@ -864,7 +1031,7 @@ export default function App() {
         .activity-list li:last-child{ border-bottom:none; }
         .activity-list .dot{ width:8px; height:8px; border-radius:50%; margin-top:5px; flex-shrink:0; }
         .dot.rose{ background:#C27B2B; }
-        .dot.teal{ background:#2A856A; }
+        .dot.teal{ background:#2A5F85; }
         .dot.purple{ background:var(--md-primary); }
         .activity-list strong{ display:block; font-size:13.5px; color:var(--md-ink-primary); font-weight:600; }
         .activity-list span{ font-size:12px; color:var(--md-ink-muted); }
@@ -876,7 +1043,7 @@ export default function App() {
         }
         .chat-toolbar{
           display:flex; align-items:center; justify-content:space-between; padding:14px 22px;
-          border-bottom:1px solid var(--md-outline); background:#FBFDFB;
+          border-bottom:1px solid var(--md-outline); background:#FBFDFD;
         }
         .chat-toolbar-left{ display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--md-primary); font-weight:700; }
         .chat-toolbar-right{ display:flex; align-items:center; gap:8px; }
@@ -887,7 +1054,7 @@ export default function App() {
         .tool-btn:hover{ background:var(--md-surface-container-high); color:var(--md-primary); }
         .tool-btn.on{ background:var(--md-primary-container); color:var(--md-on-primary-container); border-color:transparent; }
 
-        .chat-window{ flex:1; overflow-y:auto; padding:22px; display:flex; flex-direction:column; gap:16px; background:#FBFDFB; }
+        .chat-window{ flex:1; overflow-y:auto; padding:22px; display:flex; flex-direction:column; gap:16px; background:#FBFDFD; }
         .msg-row{ display:flex; flex-direction:column; max-width:80%; }
         .msg-row.user{ align-self:flex-end; align-items:flex-end; }
         .msg-row.assistant{ align-self:flex-start; align-items:flex-start; }
@@ -919,7 +1086,7 @@ export default function App() {
         .risk-flag svg{ flex-shrink:0; margin-top:2px; }
         .risk-flag.risk-l2, .risk-flag.risk-l3{ background:#FDF2F2; color:#991B1B; border-color:#F9D5D5; }
 
-        .expand-panel{ margin-top:8px; border:1px solid var(--md-outline); border-radius:12px; background:#FAFCFB; }
+        .expand-panel{ margin-top:8px; border:1px solid var(--md-outline); border-radius:12px; background:#FAFCFC; }
         .expand-panel summary{ list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 12px; font-size:12px; font-weight:700; color:var(--md-primary); }
         .expand-panel summary::-webkit-details-marker{ display:none; }
         .expand-panel summary::after{ content:"+"; font-size:14px; font-weight:700; color:var(--md-ink-muted); }
@@ -934,13 +1101,13 @@ export default function App() {
         .chip:hover{ background:var(--md-primary-container); border-color:var(--md-primary); }
 
         .chat-input-row{ display:flex; align-items:center; gap:10px; padding:14px 22px; border-top:1px solid var(--md-outline); background:#fff; }
-        .mic-btn{ width:42px; height:42px; border-radius:50%; border:1.5px solid var(--md-outline); background:#FAFCFB; display:flex; align-items:center; justify-content:center; color:var(--md-primary); flex-shrink:0; transition:all .18s ease; }
+        .mic-btn{ width:42px; height:42px; border-radius:50%; border:1.5px solid var(--md-outline); background:#FAFCFC; display:flex; align-items:center; justify-content:center; color:var(--md-primary); flex-shrink:0; transition:all .18s ease; }
         .mic-btn.listening{ background:#C74D4D; color:#fff; border-color:transparent; }
         .mic-btn.disabled{ opacity:0.4; cursor:not-allowed; }
         .mic-btn:hover{ background:var(--md-surface-container-high); }
-        .chat-input{ flex:1; border:1.5px solid var(--md-outline-strong); border-radius:999px; padding:12px 20px; font-size:14px; font-family:var(--font-body); outline:none; background:#FBFDFB; transition:all .18s ease; }
-        .chat-input:focus{ border-color:var(--md-primary); background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.1); }
-        .send-btn{ width:42px; height:42px; border-radius:50%; background:var(--md-primary); color:#fff; border:none; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .18s ease; box-shadow:0 2px 8px rgba(27,94,80,0.2); }
+        .chat-input{ flex:1; border:1.5px solid var(--md-outline-strong); border-radius:999px; padding:12px 20px; font-size:14px; font-family:var(--font-body); outline:none; background:#FBFDFD; transition:all .18s ease; }
+        .chat-input:focus{ border-color:var(--md-primary); background:#fff; box-shadow:0 0 0 3px rgba(2,47,86,0.1); }
+        .send-btn{ width:42px; height:42px; border-radius:50%; background:var(--md-primary); color:#fff; border:none; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .18s ease; box-shadow:0 2px 8px rgba(2,47,86,0.2); }
         .send-btn:hover{ background:var(--md-primary-dark); transform:translateY(-1px); }
 
         /* Reports */
@@ -956,7 +1123,7 @@ export default function App() {
         .scan-card{ background:#fff; border:1px solid var(--md-outline); border-radius:20px; padding:24px; box-shadow:var(--shadow-card); }
         .scan-card-head{ display:flex; align-items:center; gap:9px; font-family:var(--font-head); font-weight:700; font-size:14px; color:var(--md-ink-primary); margin-bottom:12px; }
         .spin{ animation:spin 1s linear infinite; color:var(--md-primary); }
-        .ok{ color:#2A856A; }
+        .ok{ color:#2A5F85; }
         .err{ color:#C74D4D; }
         .marker-table{ width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px; }
         .marker-table th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--md-ink-muted); padding:9px 8px; border-bottom:1px solid var(--md-outline); }
@@ -964,7 +1131,7 @@ export default function App() {
         .flag-pill{ font-weight:700; font-size:11px; padding:3px 10px; border-radius:999px; }
         .flag-pill.low{ background:var(--md-amber-container); color:var(--md-amber-on-container); }
         .flag-pill.high{ background:#FDF2F2; color:#991B1B; }
-        .flag-pill.normal{ background:#D6EDE5; color:#06332A; }
+        .flag-pill.normal{ background:#CCDEE4; color:#061D33; }
         .flag-pill.flagged{ background:var(--md-amber-container); color:var(--md-amber-on-container); }
         .past-reports{ background:#fff; border:1px solid var(--md-outline); border-radius:20px; padding:24px; box-shadow:var(--shadow-card); }
         .past-reports h3{ font-size:15px; margin-bottom:14px; }
@@ -994,10 +1161,10 @@ export default function App() {
 
         /* Digital Health Twin */
         .twin-shell{ display:flex; flex-direction:column; gap:22px; }
-        .twin-profile-card{ display:flex; align-items:center; gap:18px; background:linear-gradient(150deg, #144D42 0%, #1B5E50 100%); border-radius:24px; padding:24px 28px; color:#fff; }
+        .twin-profile-card{ display:flex; align-items:center; gap:18px; background:linear-gradient(150deg, #02182E 0%, #022F56 100%); border-radius:24px; padding:24px 28px; color:#fff; }
         .twin-avatar{ width:44px; height:44px; border-radius:50%; background:rgba(255,255,255,0.14); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
         .twin-profile-info h2{ color:#fff; font-size:18px; }
-        .twin-profile-info .muted-sm{ color:rgba(235,246,242,0.9); margin-top:3px; }
+        .twin-profile-info .muted-sm{ color:rgba(235,244,246,0.9); margin-top:3px; }
         .twin-badge{ margin-left:auto; display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,0.14); border-radius:999px; padding:6px 14px; font-size:12px; font-weight:700; flex-shrink:0; }
         .twin-grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }
         .twin-card{ background:#fff; border:1px solid var(--md-outline); border-radius:20px; padding:22px 24px; box-shadow:var(--shadow-card); }
@@ -1010,7 +1177,7 @@ export default function App() {
         .twin-timeline li span{ font-size:11.5px; color:var(--md-ink-muted); }
         .twin-tag{ flex-shrink:0; font-weight:700; font-size:10px; padding:3px 8px; border-radius:999px; }
         .twin-tag-symptom{ background:#FDF2F2; color:#991B1B; }
-        .twin-tag-lab{ background:#D6EDE5; color:#06332A; }
+        .twin-tag-lab{ background:#CCDEE4; color:#061D33; }
         .twin-tag-lifestyle{ background:var(--md-surface-container-high); color:var(--md-primary); }
 
         .risk-card{ border:1px solid var(--md-outline); border-radius:16px; padding:18px 20px; margin-bottom:12px; background:#fff; }
@@ -1019,9 +1186,9 @@ export default function App() {
         .risk-card-head strong{ color:var(--md-ink-primary); font-size:14px; }
         .example-tag{ margin-left:auto; font-size:10.5px; font-weight:700; color:var(--md-ink-muted); border:1px solid var(--md-outline); border-radius:999px; padding:2px 9px; }
         .level-pill{ font-weight:700; font-size:10.5px; padding:3px 10px; border-radius:999px; flex-shrink:0; }
-        .level-l0{ background:#D6EDE5; color:#06332A; } .level-l1{ background:var(--md-amber-container); color:var(--md-amber-on-container); }
+        .level-l0{ background:#CCDEE4; color:#061D33; } .level-l1{ background:var(--md-amber-container); color:var(--md-amber-on-container); }
         .level-l2{ background:#FDF2F2; color:#991B1B; } .level-l3{ background:#991B1B; color:#fff; }
-        .risk-card-l0{ border-left:4px solid #2A856A; } .risk-card-l1{ border-left:4px solid #C27B2B; }
+        .risk-card-l0{ border-left:4px solid #2A5F85; } .risk-card-l1{ border-left:4px solid #C27B2B; }
         .risk-card-l2{ border-left:4px solid #C74D4D; } .risk-card-l3{ border-left:4px solid #991B1B; }
         .factor-list{ margin:0 0 8px; padding-left:16px; font-size:13px; color:var(--md-ink-secondary); }
         .factor-list li{ margin-bottom:4px; }
@@ -1029,7 +1196,7 @@ export default function App() {
         .risk-next svg{ flex-shrink:0; margin-top:2px; color:var(--md-primary); }
 
         /* Clinician Portal */
-        .clinician-banner{ display:flex; align-items:flex-start; gap:9px; background:var(--md-surface-container-high); color:var(--md-ink-muted); border:1px solid #D6EDE5; border-radius:16px; padding:14px 18px; font-size:13px; line-height:1.55; margin-bottom:20px; }
+        .clinician-banner{ display:flex; align-items:flex-start; gap:9px; background:var(--md-surface-container-high); color:var(--md-ink-muted); border:1px solid #CCDEE4; border-radius:16px; padding:14px 18px; font-size:13px; line-height:1.55; margin-bottom:20px; }
         .clinician-banner svg{ flex-shrink:0; margin-top:2px; color:var(--md-primary); }
         .clinician-grid{ display:grid; grid-template-columns:310px 1fr; gap:20px; align-items:start; }
         .roster-card{ background:#fff; border:1px solid var(--md-outline); border-radius:20px; padding:20px; box-shadow:var(--shadow-card); }
@@ -1378,7 +1545,7 @@ export default function App() {
                       )}
 
                       {m.isGuestLimit && (
-                        <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #D5E2DC" }}>
+                        <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #D5DFE2" }}>
                           <button
                             onClick={() => setView("login")}
                             className="qa-btn primary"
@@ -1391,7 +1558,7 @@ export default function App() {
                               display: "inline-flex",
                               alignItems: "center",
                               gap: "6px",
-                              boxShadow: "0 2px 8px rgba(27,94,80,0.25)",
+                              boxShadow: "0 2px 8px rgba(2,47,86,0.25)",
                               borderRadius: "999px",
                               border: "none",
                               cursor: "pointer",
@@ -1405,7 +1572,7 @@ export default function App() {
                       {m.sender === "assistant" && (
                         <div className="msg-footer">
                           <button className="msg-action-btn" onClick={() => copyMessage(m.id, m.text)}>
-                            {copiedId === m.id ? <Check size={12} color="#2A856A" /> : <Copy size={12} />}
+                            {copiedId === m.id ? <Check size={12} color="#2A5F85" /> : <Copy size={12} />}
                             <span>{copiedId === m.id ? t("copied") : t("copy")}</span>
                           </button>
                           <button className="msg-action-btn" onClick={() => speak(m.text)}>

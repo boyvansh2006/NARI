@@ -39,12 +39,34 @@ export async function sendChatMessage(message, history = [], profile = null, pat
   return handleJson(res);
 }
 
+// BUG FIX: the recorded filename was always hard-coded to "utterance.webm"
+// regardless of what container the browser's MediaRecorder actually
+// produced. Chrome/Firefox do record webm, but Safari/iOS's MediaRecorder
+// doesn't support audio/webm at all and silently records audio/mp4
+// instead (see App.jsx's toggleListening, which already reads back
+// recorder.mimeType correctly onto the Blob - this just wasn't being used
+// here). Uploading mp4 bytes under a ".webm" name misleads the backend's
+// extension-based temp file (see api/voice.py's _transcribe_upload),
+// which is a real "the platform doesn't understand what I say" cause on
+// Safari/iOS specifically. Derive the extension from the Blob's actual type.
+function _audioFilename(blob) {
+  const type = (blob && blob.type) || "";
+  if (type.includes("mp4")) return "utterance.mp4";
+  if (type.includes("ogg")) return "utterance.ogg";
+  if (type.includes("wav")) return "utterance.wav";
+  return "utterance.webm";
+}
+
 /** Voice converse round trip */
-export async function voiceConverse({ audioBlob, transcript, history = [] }) {
+export async function voiceConverse({ audioBlob, transcript, history = [], language = null }) {
   const form = new FormData();
-  if (audioBlob) form.append("audio", audioBlob, "utterance.webm");
+  if (audioBlob) form.append("audio", audioBlob, _audioFilename(audioBlob));
   if (transcript) form.append("transcript", transcript);
   form.append("history_json", JSON.stringify(history));
+  // BUG FIX: language was never sent, so the backend always force-decoded
+  // speech as English (see api/voice.py) and never told the LLM which
+  // language to reply in for voice turns.
+  if (language) form.append("language", language);
 
   const res = await fetch(`${API_BASE}/api/v1/voice/converse`, {
     method: "POST",

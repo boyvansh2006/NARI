@@ -36,6 +36,24 @@ piper-tts>=1.6,<2
 # (PIPER_VOICE_MODEL / PIPER_VOICE_CONFIG in .env).
 python-jose[cryptography]>=3.3,<4.0
 passlib>=1.7,<2.0
+# BUG FIX: passlib's "bcrypt" hashing scheme (see core/security.py's
+# CryptContext) needs this separate backend package - passlib does not
+# vendor it - and pinned specifically to <4.1: passlib 1.7.4 (latest as of
+# writing) does its own internal self-test of the bcrypt backend on first
+# use (detect_wrap_bug), and bcrypt>=4.1 changed enough of its internal
+# validation that this self-test itself raises
+# "ValueError: password cannot be longer than 72 bytes" before a single
+# real password is ever hashed - i.e. the *first* register or login call
+# crashes with a 500, unrelated to what password the user typed. bcrypt
+# 4.0.x predates that change and is what passlib 1.7.4 was tested against.
+bcrypt>=4.0,<4.1
+# Used unconditionally in core/rate_limit.py/main.py; not listing it here
+# left `pip install -r requirements.txt` unable to boot the app at all.
+
+# --- Web framework middleware (GGSIPU2617 extension) -----------------------
+slowapi>=0.1.9,<1.0
+# Used by main.py/core/rate_limit.py for per-route rate limiting - imported
+# unconditionally at startup, so the app cannot boot without it.
 
 
 

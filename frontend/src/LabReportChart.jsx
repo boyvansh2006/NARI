@@ -3,8 +3,8 @@ import React from "react";
 const STATUS_COLOR = {
   HIGH: "#C74D4D",
   LOW: "#C27B2B",
-  NORMAL: "#2A856A",
-  UNSPECIFIED: "#8A9E96",
+  NORMAL: "#2A5F85",
+  UNSPECIFIED: "#8A979E",
 };
 
 /** Material 3 rounded linear indicator for biomarker observation */
@@ -24,11 +24,11 @@ export default function LabReportChart({ metrics = [] }) {
       <style>{`
         .lab-chart{ display:flex; flex-direction:column; gap:14px; margin:16px 0; }
         .lab-chart-row{ display:grid; grid-template-columns:160px 1fr 80px; align-items:center; gap:12px; }
-        .lab-chart-label{ font-size:13px; color:#16362F; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .lab-chart-track{ background:#E8F0EC; border-radius:999px; height:10px; overflow:hidden; }
+        .lab-chart-label{ font-size:13px; color:#162736; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .lab-chart-track{ background:#E8EEF0; border-radius:999px; height:10px; overflow:hidden; }
         .lab-chart-fill{ height:100%; border-radius:999px; transition: width .5s ease; }
-        .lab-chart-value{ font-size:12px; font-weight:700; color:#0D2C24; text-align:right; font-variant-numeric: tabular-nums; }
-        .lab-chart-legend{ display:flex; gap:18px; font-size:12px; color:#4E6D64; margin-top:6px; font-weight:500; }
+        .lab-chart-value{ font-size:12px; font-weight:700; color:#0D1D2C; text-align:right; font-variant-numeric: tabular-nums; }
+        .lab-chart-legend{ display:flex; gap:18px; font-size:12px; color:#4E606D; margin-top:6px; font-weight:500; }
         .lab-chart-legend span{ display:inline-flex; align-items:center; gap:6px; }
         .legend-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; }
       `}</style>

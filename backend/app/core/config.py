@@ -66,7 +66,13 @@ class Settings(BaseModel):
     jwt_secret_key: str = Field(default="")
 
     # Voice pipeline (from MAITRI)
-    whisper_model_size: str = Field(default="small.en")
+    # BUG FIX: "small.en" is an English-ONLY Whisper variant - it has no
+    # tokens for any other language, so it can't transcribe Hindi, Tamil,
+    # Bengali, etc. no matter what `language=` is passed to transcribe()
+    # (see voice_service.py), even though the app's own language picker
+    # (i18n.js) offers 10 languages. "small" is the multilingual model -
+    # same size/speed, and still transcribes English perfectly fine.
+    whisper_model_size: str = Field(default="small")
     whisper_device: str = Field(default="cpu")
     whisper_compute_type: str = Field(default="int8")
     piper_voice_model: str = Field(default="")
@@ -134,7 +140,7 @@ def get_settings() -> Settings:
         mistral_api_key=os.getenv("MISTRAL_API_KEY", ""),
         mistral_model=os.getenv("MISTRAL_MODEL", "mistral-small-2506"),
         jwt_secret_key=os.getenv("JWT_SECRET_KEY", ""),
-        whisper_model_size=os.getenv("WHISPER_MODEL_SIZE", "small.en"),
+        whisper_model_size=os.getenv("WHISPER_MODEL_SIZE", "small"),  # multilingual - see Field default above
         whisper_device=os.getenv("WHISPER_DEVICE", "cpu"),
         whisper_compute_type=os.getenv("WHISPER_COMPUTE_TYPE", "int8"),
         piper_voice_model=os.getenv("PIPER_VOICE_MODEL", ""),

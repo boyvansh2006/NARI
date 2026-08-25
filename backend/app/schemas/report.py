@@ -24,14 +24,26 @@ class ReportRead(BaseModel):
 
 
 class ReportListItem(BaseModel):
-    """Lightweight representation for list views - omits the parsed
-    biomarker JSON so listing reports stays cheap."""
+    """Representation for list views.
+
+    BUG FIX: this used to omit `report_json` entirely ("lightweight...
+    omits the parsed biomarker JSON so listing reports stays cheap"), but
+    frontend/src/App.jsx's report list rendering reads
+    `r.report_json?.metrics` on every item returned from GET /reports to
+    compute each row's flagged/normal status pill AND to populate the
+    biomarker chart when a row is clicked - both silently no-opped (always
+    "All Normal Range", chart never opened) because that field was always
+    undefined here. Reports are small, per-user JSON blobs, not a
+    high-volume list, so the perf tradeoff this was optimizing for isn't
+    worth the broken UI - include the full parsed JSON, matching ReportRead.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     original_filename: str
     patient_demographics_found: bool
+    report_json: dict[str, Any]
     uploaded_at: datetime
 
 

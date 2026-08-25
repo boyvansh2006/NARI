@@ -35,11 +35,11 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
     <div className="login-shell">
       <style>{`
         .login-shell{
-          min-height:100vh; display:flex; font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; background:#F7FAF8;
+          min-height:100vh; display:flex; font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; background:#F7F9FA;
         }
         .login-shell *{ box-sizing:border-box; }
         .login-visual{
-          flex:1.1; background:linear-gradient(160deg,#144D42 0%,#1B5E50 60%,#236D5E 100%);
+          flex:1.1; background:linear-gradient(160deg,#02182E 0%,#022F56 60%,#234D6D 100%);
           display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff;
           position:relative; overflow:hidden; padding:48px;
         }
@@ -53,73 +53,73 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
         .login-visual-mark{
           width:64px; height:64px; border-radius:22px; margin:0 auto 24px;
           background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25);
-          display:flex; align-items:center; justify-content:center; color:#D6EDE5;
+          display:flex; align-items:center; justify-content:center; color:#CCDEE4;
         }
         .login-visual h2{ font-size:28px; font-weight:800; margin-bottom:14px; color:#fff; letter-spacing:-0.01em; line-height:1.2; }
-        .login-visual p{ font-size:14.5px; line-height:1.7; color:rgba(235,246,242,0.9); margin:0; }
+        .login-visual p{ font-size:14.5px; line-height:1.7; color:rgba(235,244,246,0.9); margin:0; }
         .login-badge-strip{
           display:inline-flex; align-items:center; gap:8px; margin-top:28px;
           background:rgba(255,255,255,0.1); padding:8px 16px; border-radius:999px; font-size:12.5px;
-          color:#D6EDE5; border:1px solid rgba(255,255,255,0.2); font-weight:500;
+          color:#CCDEE4; border:1px solid rgba(255,255,255,0.2); font-weight:500;
         }
 
         .login-form-side{
           flex:1; display:flex; align-items:center; justify-content:center; background:#FFFFFF; padding:48px 36px;
-          border-left:1px solid #E2EBE6;
+          border-left:1px solid #E2E9EB;
         }
         .login-card{ width:100%; max-width:400px; }
         .login-brand{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
         .login-brand-mark{
-          width:36px; height:36px; border-radius:12px; background:#1B5E50;
-          display:flex; align-items:center; justify-content:center; color:#D6EDE5; flex-shrink:0;
+          width:36px; height:36px; border-radius:12px; background:#022F56;
+          display:flex; align-items:center; justify-content:center; color:#CCDEE4; flex-shrink:0;
         }
-        .login-brand span{ font-weight:800; font-size:24px; letter-spacing:-0.01em; color:#0D2C24; }
-        .login-sub{ color:#4E6D64; font-size:14px; margin:0 0 26px; line-height:1.55; }
+        .login-brand span{ font-weight:800; font-size:24px; letter-spacing:-0.01em; color:#0D1D2C; }
+        .login-sub{ color:#4E606D; font-size:14px; margin:0 0 26px; line-height:1.55; }
         
         /* M3 Segmented Switcher */
-        .login-tabs{ display:flex; background:#EDF5F1; border-radius:999px; padding:4px; margin-bottom:26px; border:1px solid #E0EAE5; }
+        .login-tabs{ display:flex; background:#EDF3F5; border-radius:999px; padding:4px; margin-bottom:26px; border:1px solid #E0E8EA; }
         .login-tab{
           flex:1; text-align:center; padding:10px 0; border:none; background:none; border-radius:999px;
-          font-weight:700; font-size:13px; color:#4E6D64; cursor:pointer; transition: all .2s ease;
+          font-weight:700; font-size:13px; color:#4E606D; cursor:pointer; transition: all .2s ease;
         }
-        .login-tab.active{ background:#1B5E50; color:#fff; box-shadow:0 2px 10px rgba(27,94,80,0.28); }
+        .login-tab.active{ background:#022F56; color:#fff; box-shadow:0 2px 10px rgba(2,47,86,0.28); }
 
         .field{ margin-bottom:20px; }
-        .field label{ display:block; font-size:12.5px; font-weight:600; color:#16362F; margin-bottom:8px; }
+        .field label{ display:block; font-size:12.5px; font-weight:600; color:#162736; margin-bottom:8px; }
         .field-input{
-          display:flex; align-items:center; gap:12px; border:1.5px solid #D5E2DC;
-          border-radius:14px; padding:12px 16px; background:#FBFDFB; transition: all .2s ease;
+          display:flex; align-items:center; gap:12px; border:1.5px solid #D5DFE2;
+          border-radius:14px; padding:12px 16px; background:#FBFDFD; transition: all .2s ease;
         }
-        .field-input:focus-within{ border-color:#1B5E50; background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.12); }
-        .field-input svg{ color:#74998E; flex-shrink:0; }
-        .field-input input{ border:none; outline:none; flex:1; font-size:14px; font-family:inherit; background:transparent; color:#0D2C24; }
+        .field-input:focus-within{ border-color:#022F56; background:#fff; box-shadow:0 0 0 3px rgba(2,47,86,0.12); }
+        .field-input svg{ color:#748C99; flex-shrink:0; }
+        .field-input input{ border:none; outline:none; flex:1; font-size:14px; font-family:inherit; background:transparent; color:#0D1D2C; }
         
         .login-error{ background:#FDF2F2; color:#A02C2C; font-size:13px; padding:12px 16px; border-radius:12px; margin-bottom:18px; border:1px solid #F9D5D5; line-height:1.5; }
         
         /* M3 Filled Button */
         .login-submit{
           width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-          background:#1B5E50; color:#fff; border:none; border-radius:999px;
+          background:#022F56; color:#fff; border:none; border-radius:999px;
           padding:14px 0; font-weight:700; font-size:14.5px;
-          cursor:pointer; transition: all .2s ease; margin-top:8px; box-shadow:0 4px 14px rgba(27,94,80,0.2);
+          cursor:pointer; transition: all .2s ease; margin-top:8px; box-shadow:0 4px 14px rgba(2,47,86,0.2);
         }
-        .login-submit:hover{ background:#144D42; transform:translateY(-1px); box-shadow:0 6px 18px rgba(27,94,80,0.28); }
+        .login-submit:hover{ background:#02182E; transform:translateY(-1px); box-shadow:0 6px 18px rgba(2,47,86,0.28); }
         .login-submit:disabled{ opacity:0.6; cursor:not-allowed; transform:none; }
         
         .login-divider{ display:flex; align-items:center; gap:14px; margin:24px 0; }
-        .login-divider span{ font-size:11.5px; color:#74998E; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
-        .login-divider::before, .login-divider::after{ content:''; flex:1; height:1px; background:#E2EBE6; }
+        .login-divider span{ font-size:11.5px; color:#748C99; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+        .login-divider::before, .login-divider::after{ content:''; flex:1; height:1px; background:#E2E9EB; }
         
         /* M3 Tonal Outlined Button */
         .login-guest-btn{
           width:100%; display:flex; align-items:center; justify-content:center; gap:8px;
-          background:#F4F8F6; border:1.5px solid #D5E2DC; color:#1B5E50; border-radius:999px;
+          background:#F4F7F8; border:1.5px solid #D5DFE2; color:#022F56; border-radius:999px;
           padding:13px 0; font-weight:700; font-size:14px;
           cursor:pointer; transition: all .2s ease;
         }
-        .login-guest-btn:hover{ background:#EDF5F1; border-color:#1B5E50; }
+        .login-guest-btn:hover{ background:#EDF3F5; border-color:#022F56; }
         
-        .login-foot{ text-align:center; margin-top:28px; font-size:12.5px; color:#6B8B82; display:flex; align-items:center; justify-content:center; gap:7px; }
+        .login-foot{ text-align:center; margin-top:28px; font-size:12.5px; color:#6B7F8B; display:flex; align-items:center; justify-content:center; gap:7px; }
         .spinner{ width:16px; height:16px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
         @keyframes spin{ to{ transform:rotate(360deg); } }
         @media (max-width:820px){ .login-visual{ display:none; } }
@@ -149,12 +149,12 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
               <span>NARI</span>
             </div>
             {onLangChange && (
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#EDF5F1", border: "1px solid #D5E2DC", borderRadius: "999px", padding: "4px 12px" }}>
-                <Globe size={13} color="#1B5E50" />
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#EDF3F5", border: "1px solid #D5DFE2", borderRadius: "999px", padding: "4px 12px" }}>
+                <Globe size={13} color="#022F56" />
                 <select
                   value={lang}
                   onChange={(e) => onLangChange(e.target.value)}
-                  style={{ border: "none", outline: "none", background: "transparent", fontSize: "12px", fontWeight: 700, color: "#1B5E50", cursor: "pointer" }}
+                  style={{ border: "none", outline: "none", background: "transparent", fontSize: "12px", fontWeight: 700, color: "#022F56", cursor: "pointer" }}
                 >
                   {SUPPORTED_LANGUAGES.map((l) => (
                     <option key={l.code} value={l.code}>

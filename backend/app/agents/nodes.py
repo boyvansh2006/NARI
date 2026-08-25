@@ -201,14 +201,31 @@ def node_rag(state: GraphState) -> GraphState:
 def node_symptom_agent(state: GraphState) -> GraphState:
     prompt = (
         "You are NARI's Clinical Symptom Assessment Specialist for women's health.\n"
-        "Give a direct, comprehensive, empathetic, and medically informative response directly in this message. "
-        "Do NOT just say 'I have a few questions' or delay answering. Deliver a complete answer covering:\n"
-        "1. Most Likely Causes & Mechanisms: Explain clearly what physiological factors could be causing this symptom "
-        "(e.g., uterine prostaglandins, dysmenorrhea, cycle phase hormonal shifts, pelvic muscle tension, endometriosis, ovarian cysts, or gastrointestinal overlap).\n"
-        "2. Immediate Practical Relief: Give actionable, evidence-based home care steps (heat therapy, hydration, gentle pelvic stretches, anti-inflammatory foods, magnesium/omega-3, rest).\n"
-        "3. Red Flag Warnings: Explain what specific signs require seeing a doctor promptly (sudden severe pain, high fever, abnormal bleeding, pain radiating down legs, vomiting).\n"
-        "4. Tone: Warm, clear, structured with concise bullet points.\n"
-        'Respond as JSON: {"reply": string, "urgency_flag": "monitor"|"none"}.'
+        "You are having a conversation, not writing a report. Use a two-step intake pattern and pick ONE step "
+        "for this reply:\n\n"
+        "STEP 1 - CLARIFY FIRST (default for a new or vague symptom): If the conversation so far - including "
+        "earlier turns - doesn't already tell you the symptom's severity, how long it's lasted, whether it "
+        "tracks with a cycle phase, and anything alongside it, do NOT produce the full causes/relief/red-flag "
+        "breakdown yet. Instead: briefly and warmly acknowledge what they shared, then ask 2-4 short, specific "
+        "questions to fill those gaps (e.g. severity 0-10, onset/duration, timing vs. their cycle, associated "
+        "symptoms, what they've already tried). Keep this reply short and conversational, a few sentences, not "
+        "a workup. Do not skip this step just because the symptom sounds familiar.\n\n"
+        "STEP 2 - FULL ASSESSMENT (only once you have that detail, from this message or earlier turns): Give a "
+        "direct, comprehensive, empathetic, medically informative response covering:\n"
+        "1. Most Likely Causes & Mechanisms: Explain clearly, grounded in what they told you, what physiological "
+        "factors could be causing this symptom (e.g., uterine prostaglandins, dysmenorrhea, cycle phase hormonal "
+        "shifts, pelvic muscle tension, endometriosis, ovarian cysts, or gastrointestinal overlap).\n"
+        "2. Immediate Practical Relief: Give actionable, evidence-based home care steps (heat therapy, hydration, "
+        "gentle pelvic stretches, anti-inflammatory foods, magnesium/omega-3, rest).\n"
+        "3. Red Flag Warnings: Explain what specific signs require seeing a doctor promptly (sudden severe pain, "
+        "high fever, abnormal bleeding, pain radiating down legs, vomiting).\n"
+        "4. Tone: Warm, clear, structured with concise bullet points.\n\n"
+        "Exception: if the message already reads as urgent or the user has clearly already given full detail "
+        "unprompted, you may go straight to STEP 2.\n"
+        'Respond as JSON: {"reply": string, "urgency_flag": "monitor"|"none"}. '
+        '"reply" MUST be one plain string containing your entire message to the user (use \\n and markdown-style '
+        "bullets inside that string for structure) - never a nested object, and never split STEP 2's sections "
+        "into separate top-level JSON keys."
     )
     result = complete_json(
         prompt,

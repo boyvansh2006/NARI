@@ -162,75 +162,75 @@ export default function RemindersPage({ onTaken, isGuest }) {
       <style>{`
         .reminders-shell{ display:flex; flex-direction:column; gap:22px; font-family:'Plus Jakarta Sans','DM Sans',sans-serif; }
         .rem-summary{
-          background:linear-gradient(150deg, #144D42 0%, #1B5E50 100%); color:#fff; border-radius:24px; padding:26px 30px;
-          display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; box-shadow:0 4px 18px rgba(27,94,80,0.12);
+          background:linear-gradient(150deg, #02182E 0%, #022F56 100%); color:#fff; border-radius:24px; padding:26px 30px;
+          display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:16px; box-shadow:0 4px 18px rgba(2,47,86,0.12);
         }
         .rem-summary-text h2{ color:#fff; font-size:20px; font-weight:700; margin:0; }
-        .rem-summary-text p{ color:rgba(235,246,242,0.9); font-size:13.5px; margin:4px 0 0; }
+        .rem-summary-text p{ color:rgba(235,244,246,0.9); font-size:13.5px; margin:4px 0 0; }
         .rem-summary-stat{ background:rgba(255,255,255,0.12); border-radius:18px; padding:12px 20px; text-align:center; border:1px solid rgba(255,255,255,0.2); }
         .rem-summary-stat strong{ display:block; font-size:24px; color:#fff; font-weight:800; }
-        .rem-summary-stat span{ font-size:11.5px; color:rgba(235,246,242,0.85); font-weight:500; }
+        .rem-summary-stat span{ font-size:11.5px; color:rgba(235,244,246,0.85); font-weight:500; }
         .rem-notif-btn{
-          display:inline-flex; align-items:center; gap:7px; background:#fff; color:#1B5E50;
+          display:inline-flex; align-items:center; gap:7px; background:#fff; color:#022F56;
           border:none; border-radius:999px; padding:8px 16px; font-weight:700; font-size:12.5px; cursor:pointer;
           box-shadow:0 2px 8px rgba(0,0,0,0.08); transition:all .18s ease;
         }
         .rem-notif-btn:hover{ transform:translateY(-1px); }
         
         .rem-add-btn{
-          display:inline-flex; align-items:center; gap:8px; background:#1B5E50;
+          display:inline-flex; align-items:center; gap:8px; background:#022F56;
           color:#fff; border:none; border-radius:999px; padding:12px 22px; font-weight:700;
-          font-size:13.5px; transition:all .18s ease; cursor:pointer; box-shadow:0 2px 10px rgba(27,94,80,0.18);
+          font-size:13.5px; transition:all .18s ease; cursor:pointer; box-shadow:0 2px 10px rgba(2,47,86,0.18);
         }
-        .rem-add-btn:hover{ background:#144D42; transform:translateY(-1px); box-shadow:0 4px 14px rgba(27,94,80,0.25); }
+        .rem-add-btn:hover{ background:#02182E; transform:translateY(-1px); box-shadow:0 4px 14px rgba(2,47,86,0.25); }
         
         .rem-form{
           background:#fff; border-radius:20px; padding:24px; box-shadow:0 2px 10px rgba(0,0,0,0.04);
-          border:1px solid #E0EAE5; display:grid; grid-template-columns:1fr 1fr; gap:16px;
+          border:1px solid #E0E8EA; display:grid; grid-template-columns:1fr 1fr; gap:16px;
         }
         .rem-form-row{ display:flex; flex-direction:column; gap:6px; }
         .rem-form-row.full{ grid-column:1 / -1; }
-        .rem-form-row label{ font-size:12.5px; font-weight:600; color:#16362F; }
+        .rem-form-row label{ font-size:12.5px; font-weight:600; color:#162736; }
         .rem-form-row input, .rem-form-row select{
-          border:1.5px solid #D5E2DC; border-radius:12px; padding:10px 14px; font-size:13.5px; font-family:inherit; outline:none;
-          background:#FBFDFB;
+          border:1.5px solid #D5DFE2; border-radius:12px; padding:10px 14px; font-size:13.5px; font-family:inherit; outline:none;
+          background:#FBFDFD;
         }
-        .rem-form-row input:focus, .rem-form-row select:focus{ border-color:#1B5E50; background:#fff; box-shadow:0 0 0 3px rgba(27,94,80,0.1); }
+        .rem-form-row input:focus, .rem-form-row select:focus{ border-color:#022F56; background:#fff; box-shadow:0 0 0 3px rgba(2,47,86,0.1); }
         .rem-form-actions{ grid-column:1 / -1; display:flex; gap:10px; justify-content:flex-end; }
         .rem-cancel-btn{
-          background:#F4F8F6; border:1.5px solid #D5E2DC; color:#4E6D64; border-radius:999px; padding:10px 18px;
+          background:#F4F7F8; border:1.5px solid #D5DFE2; color:#4E606D; border-radius:999px; padding:10px 18px;
           font-weight:700; font-size:13px; cursor:pointer;
         }
-        .rem-cancel-btn:hover{ background:#EDF5F1; }
+        .rem-cancel-btn:hover{ background:#EDF3F5; }
         
         .rem-list{ display:flex; flex-direction:column; gap:12px; }
         .rem-card{
           background:#fff; border-radius:18px; padding:18px 22px; box-shadow:0 1px 3px rgba(0,0,0,0.03);
-          border:1px solid #E0EAE5; display:flex; align-items:center; gap:16px; transition:all .18s ease;
+          border:1px solid #E0E8EA; display:flex; align-items:center; gap:16px; transition:all .18s ease;
         }
-        .rem-card:hover{ border-color:#34A883; transform:translateY(-1px); box-shadow:0 4px 14px rgba(27,94,80,0.06); }
-        .rem-card.taken{ opacity:0.68; background:#F8FAF9; }
+        .rem-card:hover{ border-color:#347BA8; transform:translateY(-1px); box-shadow:0 4px 14px rgba(2,47,86,0.06); }
+        .rem-card.taken{ opacity:0.68; background:#F8FAFA; }
         .rem-icon{
-          width:44px; height:44px; border-radius:14px; background:#D6EDE5;
-          display:flex; align-items:center; justify-content:center; color:#06332A; flex-shrink:0;
+          width:44px; height:44px; border-radius:14px; background:#CCDEE4;
+          display:flex; align-items:center; justify-content:center; color:#061D33; flex-shrink:0;
         }
         .rem-info{ flex:1; min-width:0; }
-        .rem-info strong{ display:block; font-size:14.5px; color:#0D2C24; font-weight:700; }
-        .rem-info span{ font-size:12.5px; color:#4E6D64; display:flex; align-items:center; gap:5px; margin-top:2px; flex-wrap:wrap; }
+        .rem-info strong{ display:block; font-size:14.5px; color:#0D1D2C; font-weight:700; }
+        .rem-info span{ font-size:12.5px; color:#4E606D; display:flex; align-items:center; gap:5px; margin-top:2px; flex-wrap:wrap; }
         
         .rem-check-btn{
           width:38px; height:38px; border-radius:50%; border:1.5px solid #CBD5E1; background:#fff;
-          display:flex; align-items:center; justify-content:center; color:#74998E; flex-shrink:0; transition:all .2s ease; cursor:pointer;
+          display:flex; align-items:center; justify-content:center; color:#748C99; flex-shrink:0; transition:all .2s ease; cursor:pointer;
         }
-        .rem-check-btn.done{ background:#2A856A; border-color:#2A856A; color:#fff; }
+        .rem-check-btn.done{ background:#2A5F85; border-color:#2A5F85; color:#fff; }
         .rem-delete-btn{
-          width:34px; height:34px; border-radius:50%; border:none; background:none; color:#8A9E96;
+          width:34px; height:34px; border-radius:50%; border:none; background:none; color:#8A979E;
           display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:color .18s ease; cursor:pointer;
         }
         .rem-delete-btn:hover{ color:#C74D4D; background:#FEF2F2; }
-        .rem-empty{ text-align:center; padding:52px 20px; color:#4E6D64; }
-        .rem-empty svg{ color:#74998E; margin-bottom:12px; }
-        .rem-guest-note{ font-size:12.5px; color:#4E6D64; background:#D6EDE5; border-radius:16px; padding:12px 18px; border:1px solid #C0DFD4; line-height:1.5; }
+        .rem-empty{ text-align:center; padding:52px 20px; color:#4E606D; }
+        .rem-empty svg{ color:#748C99; margin-bottom:12px; }
+        .rem-guest-note{ font-size:12.5px; color:#4E606D; background:#CCDEE4; border-radius:16px; padding:12px 18px; border:1px solid #C0D7DF; line-height:1.5; }
       `}</style>
 
       <div className="rem-summary">

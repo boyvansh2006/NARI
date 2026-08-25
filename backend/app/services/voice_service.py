@@ -102,19 +102,32 @@ class VoiceService:
 
     # -- STT ------------------------------------------------------------
 
-    def transcribe(self, audio_path: Path) -> str | None:
+    def transcribe(self, audio_path: Path, language: str | None = None) -> str | None:
         """Reused from MAITRI's SpeechRecognizer._transcribe: same
         WhisperModel.transcribe() call, minus the VAD-segmentation/queue
         machinery that only made sense for a live microphone stream.
         faster-whisper decodes most container/codec formats (webm/opus,
         wav, m4a, ...) directly via its bundled PyAV dependency, so the
-        browser's raw MediaRecorder blob can be passed straight through."""
+        browser's raw MediaRecorder blob can be passed straight through.
+
+        BUG FIX ("platform doesn't understand what I say"): this used to
+        hard-code `language="en"` on every call, so any of the app's other
+        9 supported languages (see i18n.js's SUPPORTED_LANGUAGES) got force
+        -decoded as English and came out as garbage or empty text. Now the
+        caller (api/voice.py) passes through the UI's selected language;
+        if it's None/unrecognized, we let Whisper auto-detect instead of
+        assuming English. Auto-detect needs a couple hundred ms of audio to
+        be reliable, but is still far better than a hard-coded wrong
+        language. See also core/config.py's whisper_model_size - this only
+        helps if the loaded model is actually multilingual (a "*.en" model
+        physically cannot decode anything but English, no matter what
+        language= is passed here)."""
         if not self.stt_available or self._whisper_model is None:
             return None
         try:
             segments, _info = self._whisper_model.transcribe(
                 str(audio_path),
-                language="en",
+                language=language or None,  # None = auto-detect, not "en"
                 vad_filter=True,
                 beam_size=1,
                 condition_on_previous_text=False,

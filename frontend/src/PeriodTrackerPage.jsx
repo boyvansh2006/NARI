@@ -141,16 +141,16 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         .period-shell *{ box-sizing:border-box; }
         
         .period-hero{
-          background:linear-gradient(150deg, #144D42 0%, #1B5E50 60%, #236D5E 100%);
+          background:linear-gradient(150deg, #02182E 0%, #022F56 60%, #234D6D 100%);
           border-radius:24px; padding:32px 34px; color:#fff; display:flex; justify-content:space-between;
-          align-items:center; flex-wrap:wrap; gap:20px; box-shadow:0 4px 16px rgba(20,77,66,0.15);
+          align-items:center; flex-wrap:wrap; gap:20px; box-shadow:0 4px 16px rgba(2,24,46,0.15);
         }
         .period-hero h1{ color:#fff; font-size:25px; font-weight:800; font-family:'Sora',sans-serif; margin:0 0 6px; }
-        .period-hero p{ color:rgba(235,246,242,0.92); font-size:14px; margin:0; line-height:1.6; max-width:580px; }
+        .period-hero p{ color:rgba(235,244,246,0.92); font-size:14px; margin:0; line-height:1.6; max-width:580px; }
         
         .period-actions{ display:flex; gap:12px; align-items:center; }
         .period-btn-add{
-          display:inline-flex; align-items:center; gap:8px; background:#D6EDE5; color:#06332A;
+          display:inline-flex; align-items:center; gap:8px; background:#CCDEE4; color:#061D33;
           border:none; border-radius:999px; padding:12px 22px; font-weight:700; font-size:13.5px;
           cursor:pointer; transition:all .18s ease; font-family:'Sora',sans-serif;
           box-shadow:0 2px 8px rgba(0,0,0,0.1);
@@ -158,61 +158,61 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         .period-btn-add:hover{ background:#fff; transform:translateY(-1px); }
 
         .security-badge-banner{
-          background:#FFFFFF; border:1px solid #D5E2DC; border-radius:18px; padding:14px 20px;
-          display:flex; align-items:center; gap:12px; font-size:12.5px; color:#1E3A34; line-height:1.55;
+          background:#FFFFFF; border:1px solid #D5DFE2; border-radius:18px; padding:14px 20px;
+          display:flex; align-items:center; gap:12px; font-size:12.5px; color:#1E2D3A; line-height:1.55;
           box-shadow:0 1px 3px rgba(0,0,0,0.02);
         }
-        .security-badge-banner svg{ color:#1B5E50; flex-shrink:0; }
+        .security-badge-banner svg{ color:#022F56; flex-shrink:0; }
 
         /* Grid Layout */
         .period-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-        .period-card{ background:#FFFFFF; border:1px solid #E0EAE5; border-radius:22px; padding:26px; box-shadow:0 1px 4px rgba(0,0,0,0.02); }
+        .period-card{ background:#FFFFFF; border:1px solid #E0E8EA; border-radius:22px; padding:26px; box-shadow:0 1px 4px rgba(0,0,0,0.02); }
         .period-card-wide{ grid-column:1 / -1; }
         
         .period-card-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; }
-        .period-card-head-left{ display:flex; align-items:center; gap:9px; color:#1B5E50; font-weight:700; font-family:'Sora',sans-serif; font-size:15px; }
+        .period-card-head-left{ display:flex; align-items:center; gap:9px; color:#022F56; font-weight:700; font-family:'Sora',sans-serif; font-size:15px; }
         
         /* Phase Indicator */
         .phase-display{ display:flex; align-items:center; gap:20px; margin-bottom:20px; }
         .phase-day-ring{
-          width:80px; height:80px; border-radius:50%; background:linear-gradient(135deg,#D6EDE5 0%,#EDF5F1 100%);
-          border:3px solid #1B5E50; display:flex; flex-direction:column; align-items:center; justify-content:center;
-          color:#06332A; flex-shrink:0; text-align:center;
+          width:80px; height:80px; border-radius:50%; background:linear-gradient(135deg,#CCDEE4 0%,#EDF3F5 100%);
+          border:3px solid #022F56; display:flex; flex-direction:column; align-items:center; justify-content:center;
+          color:#061D33; flex-shrink:0; text-align:center;
         }
-        .phase-day-ring span:first-child{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#1B5E50; }
+        .phase-day-ring span:first-child{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#022F56; }
         .phase-day-ring strong{ font-size:22px; font-family:'Sora',sans-serif; font-weight:800; line-height:1.1; }
         .phase-info{ display:flex; flex-direction:column; gap:4px; }
         .phase-tag{
-          display:inline-flex; align-items:center; gap:6px; background:#D6EDE5; color:#06332A;
+          display:inline-flex; align-items:center; gap:6px; background:#CCDEE4; color:#061D33;
           border-radius:999px; padding:4px 12px; font-size:12px; font-weight:700; width:max-content;
         }
-        .phase-desc{ font-size:13px; color:#4E6D64; line-height:1.55; margin:4px 0 0; }
+        .phase-desc{ font-size:13px; color:#4E606D; line-height:1.55; margin:4px 0 0; }
         
         .comfort-tip-box{
-          background:#EDF5F1; border-left:4px solid #1B5E50; border-radius:12px; padding:12px 16px;
-          font-size:12.5px; color:#1E3A34; line-height:1.6; display:flex; align-items:flex-start; gap:8px;
+          background:#EDF3F5; border-left:4px solid #022F56; border-radius:12px; padding:12px 16px;
+          font-size:12.5px; color:#1E2D3A; line-height:1.6; display:flex; align-items:flex-start; gap:8px;
         }
-        .comfort-tip-box svg{ color:#1B5E50; flex-shrink:0; margin-top:2px; }
+        .comfort-tip-box svg{ color:#022F56; flex-shrink:0; margin-top:2px; }
 
         /* Metric Pill Rows */
         .period-metrics{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:16px; }
-        .p-metric{ background:#FBFDFB; border:1px solid #E0EAE5; border-radius:16px; padding:14px; text-align:center; }
-        .p-metric span{ font-size:11.5px; color:#4E6D64; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
-        .p-metric strong{ display:block; font-size:17px; font-family:'Sora',sans-serif; font-weight:800; color:#0D2C24; margin-top:4px; }
+        .p-metric{ background:#FBFDFD; border:1px solid #E0E8EA; border-radius:16px; padding:14px; text-align:center; }
+        .p-metric span{ font-size:11.5px; color:#4E606D; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; }
+        .p-metric strong{ display:block; font-size:17px; font-family:'Sora',sans-serif; font-weight:800; color:#0D1D2C; margin-top:4px; }
 
         /* Timeline / History */
         .cycle-list{ display:flex; flex-direction:column; gap:10px; }
         .cycle-row{
           display:flex; align-items:center; justify-content:space-between; padding:14px 18px;
-          border:1px solid #E0EAE5; border-radius:16px; background:#FAFCFB; transition:all .18s ease;
+          border:1px solid #E0E8EA; border-radius:16px; background:#FAFCFC; transition:all .18s ease;
         }
-        .cycle-row:hover{ border-color:#1B5E50; background:#fff; }
+        .cycle-row:hover{ border-color:#022F56; background:#fff; }
         .cycle-row-left{ display:flex; align-items:center; gap:14px; }
-        .cycle-dot{ width:12px; height:12px; border-radius:50%; background:#1B5E50; }
-        .cycle-date-text strong{ display:block; font-size:14px; color:#0D2C24; font-weight:700; }
-        .cycle-date-text span{ font-size:12px; color:#4E6D64; }
+        .cycle-dot{ width:12px; height:12px; border-radius:50%; background:#022F56; }
+        .cycle-date-text strong{ display:block; font-size:14px; color:#0D1D2C; font-weight:700; }
+        .cycle-date-text span{ font-size:12px; color:#4E606D; }
         .cycle-tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:4px; }
-        .c-tag{ font-size:11px; padding:2px 8px; border-radius:999px; background:#EDF5F1; color:#1B5E50; font-weight:600; }
+        .c-tag{ font-size:11px; padding:2px 8px; border-radius:999px; background:#EDF3F5; color:#022F56; font-weight:600; }
         .c-flow-tag{ font-size:11px; padding:2px 8px; border-radius:999px; font-weight:700; background:#FFF1F2; color:#9F1239; }
         
         .cycle-del-btn{
@@ -223,7 +223,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
 
         /* Modal */
         .modal-backdrop{
-          position:fixed; inset:0; background:rgba(13,44,36,0.45); backdrop-filter:blur(4px);
+          position:fixed; inset:0; background:rgba(13,29,44,0.45); backdrop-filter:blur(4px);
           display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;
         }
         .modal-card{
@@ -231,42 +231,42 @@ export default function PeriodTrackerPage({ isGuest = false }) {
           box-shadow:0 16px 40px rgba(0,0,0,0.15); max-height:90vh; overflow-y:auto;
         }
         .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
-        .modal-head h2{ font-size:20px; font-weight:800; color:#0D2C24; font-family:'Sora',sans-serif; margin:0; }
-        .modal-close{ background:none; border:none; color:#4E6D64; cursor:pointer; font-size:18px; font-weight:700; }
+        .modal-head h2{ font-size:20px; font-weight:800; color:#0D1D2C; font-family:'Sora',sans-serif; margin:0; }
+        .modal-close{ background:none; border:none; color:#4E606D; cursor:pointer; font-size:18px; font-weight:700; }
         
         .form-group{ margin-bottom:18px; }
-        .form-group label{ display:block; font-size:13px; font-weight:700; color:#16362F; margin-bottom:6px; }
+        .form-group label{ display:block; font-size:13px; font-weight:700; color:#162736; margin-bottom:6px; }
         .form-input{
-          width:100%; border:1.5px solid #D5E2DC; border-radius:12px; padding:11px 14px;
-          font-size:14px; font-family:inherit; outline:none; background:#FBFDFB;
+          width:100%; border:1.5px solid #D5DFE2; border-radius:12px; padding:11px 14px;
+          font-size:14px; font-family:inherit; outline:none; background:#FBFDFD;
         }
-        .form-input:focus{ border-color:#1B5E50; background:#fff; }
+        .form-input:focus{ border-color:#022F56; background:#fff; }
 
         .chip-grid{ display:flex; flex-wrap:wrap; gap:8px; }
         .flow-chip{
-          border:1.5px solid #D5E2DC; background:#fff; border-radius:999px; padding:8px 16px;
-          font-size:12.5px; font-weight:600; color:#1E3A34; cursor:pointer; transition:all .18s ease;
+          border:1.5px solid #D5DFE2; background:#fff; border-radius:999px; padding:8px 16px;
+          font-size:12.5px; font-weight:600; color:#1E2D3A; cursor:pointer; transition:all .18s ease;
         }
-        .flow-chip.active{ background:#1B5E50; color:#fff; border-color:#1B5E50; }
+        .flow-chip.active{ background:#022F56; color:#fff; border-color:#022F56; }
         
         .symptom-chip{
-          border:1px solid #D5E2DC; background:#FAFCFB; border-radius:999px; padding:6px 12px;
-          font-size:12px; color:#4E6D64; cursor:pointer; transition:all .15s ease;
+          border:1px solid #D5DFE2; background:#FAFCFC; border-radius:999px; padding:6px 12px;
+          font-size:12px; color:#4E606D; cursor:pointer; transition:all .15s ease;
         }
-        .symptom-chip.active{ background:#D6EDE5; color:#06332A; border-color:#1B5E50; font-weight:700; }
+        .symptom-chip.active{ background:#CCDEE4; color:#061D33; border-color:#022F56; font-weight:700; }
 
-        .range-slider{ width:100%; accent-color:#1B5E50; cursor:pointer; }
+        .range-slider{ width:100%; accent-color:#022F56; cursor:pointer; }
         
         .modal-actions{ display:flex; gap:10px; margin-top:24px; }
         .modal-btn-submit{
-          flex:1; background:#1B5E50; color:#fff; border:none; border-radius:999px;
+          flex:1; background:#022F56; color:#fff; border:none; border-radius:999px;
           padding:13px 0; font-weight:700; font-size:14px; cursor:pointer; transition:all .18s ease;
           font-family:'Sora',sans-serif;
         }
-        .modal-btn-submit:hover{ background:#144D42; }
+        .modal-btn-submit:hover{ background:#02182E; }
         .modal-btn-cancel{
-          background:none; border:1px solid #D5E2DC; border-radius:999px; padding:13px 20px;
-          font-weight:600; font-size:13.5px; color:#4E6D64; cursor:pointer;
+          background:none; border:1px solid #D5DFE2; border-radius:999px; padding:13px 20px;
+          font-weight:600; font-size:13.5px; color:#4E606D; cursor:pointer;
         }
 
         @media (max-width:768px){
@@ -301,7 +301,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
       </div>
 
       {statusMsg && (
-        <div style={{ background: "#D6EDE5", color: "#06332A", padding: "12px 18px", borderRadius: "12px", fontSize: "13px", fontWeight: "600", display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ background: "#CCDEE4", color: "#061D33", padding: "12px 18px", borderRadius: "12px", fontSize: "13px", fontWeight: "600", display: "flex", alignItems: "center", gap: "8px" }}>
           <CheckCircle2 size={16} /> {statusMsg}
         </div>
       )}
@@ -338,7 +338,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         <div className="period-card">
           <div className="period-card-head">
             <div className="period-card-head-left"><Calendar size={17} /> Predictive Cycle Metrics</div>
-            <span style={{ fontSize: "12px", color: "#4E6D64", fontWeight: "600" }}>{analytics.regularity_score}</span>
+            <span style={{ fontSize: "12px", color: "#4E606D", fontWeight: "600" }}>{analytics.regularity_score}</span>
           </div>
 
           <div className="period-metrics">
@@ -356,7 +356,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
             </div>
           </div>
 
-          <div style={{ marginTop: "16px", padding: "12px 14px", background: "#FAFCFB", border: "1px solid #E0EAE5", borderRadius: "14px", fontSize: "12.5px", color: "#4E6D64" }}>
+          <div style={{ marginTop: "16px", padding: "12px 14px", background: "#FAFCFC", border: "1px solid #E0E8EA", borderRadius: "14px", fontSize: "12.5px", color: "#4E606D" }}>
             <strong>Fertile Window:</strong> {analytics.fertile_window_start ? `${analytics.fertile_window_start} to ${analytics.fertile_window_end}` : "Awaiting more cycle entries"}
           </div>
         </div>
@@ -365,11 +365,11 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         <div className="period-card period-card-wide">
           <div className="period-card-head">
             <div className="period-card-head-left"><Droplets size={17} /> Cycle History &amp; Recorded Logs</div>
-            <span style={{ fontSize: "12.5px", color: "#4E6D64" }}>{cycles.length} recorded cycles</span>
+            <span style={{ fontSize: "12.5px", color: "#4E606D" }}>{cycles.length} recorded cycles</span>
           </div>
 
           {cycles.length === 0 ? (
-            <p style={{ color: "#4E6D64", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>
+            <p style={{ color: "#4E606D", fontSize: "13px", textAlign: "center", padding: "24px 0" }}>
               No period entries logged yet. Click <strong>Log Period Entry</strong> above to record your first cycle date.
             </p>
           ) : (
