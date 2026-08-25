@@ -48,6 +48,11 @@ class GraphState(TypedDict, total=False):
 
     # --- outputs ---
     reply: str
+    # 2-3 short, tappable next-question suggestions (e.g. "Relief tips for
+    # this?", "Diet suggestions?") so a specialist reply can stay concise
+    # instead of pre-emptively dumping every related sub-topic - see
+    # nodes.py's per-agent prompts and App.jsx's per-message chip row.
+    follow_up_questions: list[str]
     evidence: list[dict[str, Any]]
     evidence_note: str
     risk_signal: dict[str, Any] | None

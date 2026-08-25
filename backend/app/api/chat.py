@@ -79,6 +79,7 @@ async def chat(
         care_plan=result.care_plan,
         follow_up=result.follow_up,
         router_reason=result.router_reason,
+        follow_up_questions=result.follow_up_questions,
     )
 
 

@@ -56,7 +56,11 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         if (aData) setAnalytics(aData);
       }
     } catch {
-      // Fallback
+      // Network/API hiccup - keep whatever was already on screen (or the
+      // static defaults on first load) rather than a blank/broken page,
+      // but tell the user so they know it's not their real data.
+      setStatusMsg("Couldn't refresh your cycle data - showing the last known view.");
+      setTimeout(() => setStatusMsg(""), 4000);
     } finally {
       setLoading(false);
     }
@@ -75,6 +79,11 @@ export default function PeriodTrackerPage({ isGuest = false }) {
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!startDate) return;
+    if (endDate && endDate < startDate) {
+      setStatusMsg("End date can't be before the start date.");
+      setTimeout(() => setStatusMsg(""), 3500);
+      return;
+    }
     setSubmitting(true);
     setStatusMsg("");
 
@@ -103,7 +112,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         setStatusMsg("Period logged securely to your private health twin");
       }
     } catch (err) {
-      setStatusMsg("Failed to save entry. Please try again.");
+      setStatusMsg(err?.message || "Failed to save entry. Please try again.");
     } finally {
       setSubmitting(false);
       setTimeout(() => setStatusMsg(""), 3500);
@@ -216,7 +225,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         .c-flow-tag{ font-size:11px; padding:2px 8px; border-radius:999px; font-weight:700; background:#FFF1F2; color:#9F1239; }
         
         .cycle-del-btn{
-          background:none; border:none; color:#9CA3AF; cursor:pointer; padding:6px;
+          background:none; border:none; color:#4E606D; cursor:pointer; padding:6px;
           border-radius:8px; transition:all .15s ease;
         }
         .cycle-del-btn:hover{ color:#DC2626; background:#FEE2E2; }
@@ -225,11 +234,15 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         .modal-backdrop{
           position:fixed; inset:0; background:rgba(13,29,44,0.45); backdrop-filter:blur(4px);
           display:flex; align-items:center; justify-content:center; z-index:50; padding:20px;
+          animation:modalFade .18s ease;
         }
         .modal-card{
           background:#FFFFFF; border-radius:24px; padding:32px; width:100%; max-width:480px;
           box-shadow:0 16px 40px rgba(0,0,0,0.15); max-height:90vh; overflow-y:auto;
+          animation:modalPop .22s cubic-bezier(.2,.8,.2,1);
         }
+        @keyframes modalFade{ from{ opacity:0; } to{ opacity:1; } }
+        @keyframes modalPop{ from{ opacity:0; transform:translateY(14px) scale(0.98); } to{ opacity:1; transform:translateY(0) scale(1); } }
         .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; }
         .modal-head h2{ font-size:20px; font-weight:800; color:#0D1D2C; font-family:'Sora',sans-serif; margin:0; }
         .modal-close{ background:none; border:none; color:#4E606D; cursor:pointer; font-size:18px; font-weight:700; }
@@ -248,12 +261,14 @@ export default function PeriodTrackerPage({ isGuest = false }) {
           font-size:12.5px; font-weight:600; color:#1E2D3A; cursor:pointer; transition:all .18s ease;
         }
         .flow-chip.active{ background:#022F56; color:#fff; border-color:#022F56; }
+        .flow-chip:hover{ border-color:#022F56; background:#F4F7F8; }
         
         .symptom-chip{
           border:1px solid #D5DFE2; background:#FAFCFC; border-radius:999px; padding:6px 12px;
           font-size:12px; color:#4E606D; cursor:pointer; transition:all .15s ease;
         }
         .symptom-chip.active{ background:#CCDEE4; color:#061D33; border-color:#022F56; font-weight:700; }
+        .symptom-chip:hover{ border-color:#022F56; background:#EDF3F5; }
 
         .range-slider{ width:100%; accent-color:#022F56; cursor:pointer; }
         
@@ -272,6 +287,28 @@ export default function PeriodTrackerPage({ isGuest = false }) {
         @media (max-width:768px){
           .period-grid{ grid-template-columns:1fr; }
           .period-metrics{ grid-template-columns:1fr; }
+        }
+
+        .period-shell button:active{ transform:scale(0.96); }
+        .period-shell *:focus-visible{ outline:2px solid #022F56; outline-offset:2px; border-radius:6px; }
+
+        @media (max-width:640px){
+          .period-hero{ padding:24px 22px; border-radius:20px; }
+          .period-hero h1{ font-size:20px; }
+          .period-hero p{ font-size:13px; }
+          .period-actions{ width:100%; }
+          .period-btn-add{ width:100%; justify-content:center; }
+          .period-card{ padding:20px; border-radius:18px; }
+          .phase-display{ gap:14px; }
+          .phase-day-ring{ width:64px; height:64px; }
+          .phase-day-ring strong{ font-size:18px; }
+          .security-badge-banner{ padding:12px 16px; align-items:flex-start; }
+          .modal-card{ padding:22px; border-radius:20px; }
+          .cycle-row{ flex-wrap:wrap; gap:10px; }
+        }
+
+        @media (max-width:420px){
+          .phase-display{ flex-direction:column; align-items:flex-start; }
         }
       `}</style>
 
@@ -426,6 +463,7 @@ export default function PeriodTrackerPage({ isGuest = false }) {
                   type="date"
                   className="form-input"
                   value={endDate}
+                  min={startDate || undefined}
                   onChange={(e) => setEndDate(e.target.value)}
                 />
               </div>

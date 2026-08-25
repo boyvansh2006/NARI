@@ -37,6 +37,7 @@ def build_graph():
     graph = StateGraph(GraphState)
 
     graph.add_node("emergency_check", nodes.node_emergency_check)
+    graph.add_node("smalltalk_check", nodes.node_smalltalk_check)
     graph.add_node("router", nodes.node_router)
     graph.add_node("rag", nodes.node_rag)
     for agent_name, fn in nodes._SPECIALIST_NODES.items():
@@ -54,6 +55,11 @@ def build_graph():
     graph.add_conditional_edges(
         "emergency_check",
         lambda s: "end" if s.get("urgent") else "continue",
+        {"end": END, "continue": "smalltalk_check"},
+    )
+    graph.add_conditional_edges(
+        "smalltalk_check",
+        lambda s: "end" if s.get("router_agent") == "Companion" else "continue",
         {"end": END, "continue": "router"},
     )
     graph.add_edge("router", "rag")

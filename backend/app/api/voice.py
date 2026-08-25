@@ -106,6 +106,7 @@ async def voice_converse(
         audio_format="wav",
         tts_available=service.tts_available,
         stt_available=service.stt_available,
+        follow_up_questions=result.follow_up_questions,
     )
 
 

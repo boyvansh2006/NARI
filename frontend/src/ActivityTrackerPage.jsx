@@ -268,7 +268,7 @@ export default function ActivityTrackerPage({ isGuest }) {
         .meal-item{ display:flex; align-items:center; justify-content:space-between; background:#EDF3F5; border-radius:12px; padding:9px 14px; font-size:13px; }
         .meal-item span:first-child{ color:#1E2D3A; font-weight:500; }
         .meal-item span.muted-sm{ font-size:11.5px; color:#4E606D; }
-        .meal-item button{ background:none; border:none; color:#8A979E; font-size:12px; cursor:pointer; }
+        .meal-item button{ background:none; border:none; color:#4E606D; font-size:12px; cursor:pointer; }
         .meal-item button:hover{ color:#C74D4D; }
         
         .weight-row{ display:flex; align-items:center; gap:12px; margin-top:8px; }
@@ -286,6 +286,25 @@ export default function ActivityTrackerPage({ isGuest }) {
         @media (max-width:800px){
           .act-rings-grid{ grid-template-columns:repeat(2,1fr); }
           .act-two-col{ grid-template-columns:1fr; }
+        }
+
+        .activity-shell button:active{ transform:scale(0.96); }
+        .activity-shell *:focus-visible{ outline:2px solid #022F56; outline-offset:2px; border-radius:6px; }
+
+        @media (max-width:520px){
+          .act-hero{ padding:22px 20px; border-radius:20px; }
+          .act-hero h2{ font-size:17px; }
+          .fit-card{ padding:16px 18px; flex-direction:column; align-items:flex-start; }
+          .fit-actions{ width:100%; }
+          .fit-actions button{ width:100%; justify-content:center; }
+          .act-card{ padding:18px; border-radius:18px; }
+          .mood-btn{ min-width:44%; }
+          .history-strip{ gap:4px; }
+        }
+
+        @media (max-width:400px){
+          .act-rings-grid{ grid-template-columns:1fr 1fr; gap:10px; }
+          .act-ring-card{ padding:16px 10px; }
         }
       `}</style>
 

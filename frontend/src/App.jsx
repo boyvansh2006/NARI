@@ -279,7 +279,7 @@ function GuestNameGate({ value, onChange, onConfirm, onCancel, lang }) {
         }
         .guest-gate-confirm:hover{ background:#02182E; transform:translateY(-1px); }
         .guest-gate-back{
-          width:100%; background:none; border:none; color:#4E606D; font-size:13px; font-weight:600; cursor:pointer;
+          width:100%; background:none; border:none; color:#0D1D2C; font-size:13px; font-weight:600; cursor:pointer;
           padding:6px 0;
         }
       `}</style>
@@ -337,6 +337,12 @@ export default function App() {
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [toast, setToast] = useState(null);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  useEffect(() => {
+    document.body.style.overflow = mobileNavOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileNavOpen]);
 
   const [reportFile, setReportFile] = useState(null);
   const [scanState, setScanState] = useState("idle");
@@ -355,6 +361,29 @@ export default function App() {
   const inputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  // Tracks whatever server-synthesized <Audio> clip is currently playing
+  // (see handleVoiceTurn's `new Audio(...)`) so the voice-toggle effect
+  // below can stop it immediately - previously nothing held a reference to
+  // it, so toggling voice off couldn't touch audio already in flight.
+  const currentAudioRef = useRef(null);
+
+  // BUG FIX ("voice toggle isn't instant"): turning the toggle off used to
+  // just flip `speakEnabled` - nothing ever told an in-progress utterance
+  // or an in-progress server-TTS <Audio> clip to stop, so whatever was
+  // already speaking kept going until it finished on its own. This reacts
+  // to the toggle itself, so switching off cuts speech immediately no
+  // matter which turn (typed or voice) started it.
+  useEffect(() => {
+    if (speakEnabled) return;
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current.currentTime = 0;
+      currentAudioRef.current = null;
+    }
+  }, [speakEnabled]);
 
   useEffect(() => {
     localStorage.setItem("nari_lang", lang);
@@ -593,6 +622,7 @@ export default function App() {
         evidence: res.evidence || [],
         riskSignal: res.risk_signal || null,
         carePlan: res.care_plan || null,
+        followUpQuestions: res.follow_up_questions || [],
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
@@ -648,6 +678,7 @@ export default function App() {
         agent: res.agent || "NARI",
         text: res.reply,
         urgent: !!res.urgent,
+        followUpQuestions: res.follow_up_questions || [],
       };
       setMessages((prev) => [...prev, assistantMsg]);
 
@@ -657,6 +688,10 @@ export default function App() {
       if (speakEnabled) {
         if (res.audio_base64) {
           const audio = new Audio(`data:audio/${res.audio_format || "wav"};base64,${res.audio_base64}`);
+          currentAudioRef.current = audio;
+          audio.onended = () => {
+            if (currentAudioRef.current === audio) currentAudioRef.current = null;
+          };
           audio.play().catch(() => {});
         } else {
           speak(res.reply);
@@ -813,6 +848,7 @@ export default function App() {
   const goTo = (page) => (e) => {
     e?.preventDefault();
     setActivePage(page);
+    setMobileNavOpen(false);
   };
 
   if (view === "landing") {
@@ -886,12 +922,21 @@ export default function App() {
         .app-shell *{ box-sizing:border-box; }
         .app-shell{
           display:flex; min-height:100vh; background:var(--md-surface); color:var(--md-ink-secondary);
-          font-family:var(--font-body); font-size:14.5px;
+          font-family:var(--font-body); font-size:14.5px; overflow-x:hidden;
         }
         .app-shell h1,.app-shell h2,.app-shell h3,.app-shell h4{ font-family:var(--font-head); font-weight:700; color:var(--md-ink-primary); margin:0; }
         .app-shell a{ text-decoration:none; color:inherit; }
         .app-shell button{ font-family:inherit; cursor:pointer; }
         .app-shell ul{ list-style:none; margin:0; padding:0; }
+        .app-shell button:focus-visible, .app-shell a:focus-visible, .app-shell input:focus-visible,
+        .app-shell select:focus-visible, .app-shell [tabindex]:focus-visible{
+          outline:2px solid var(--md-primary); outline-offset:2px; border-radius:6px;
+        }
+        .app-shell button:active{ transform:scale(0.97); }
+        .app-shell .qa-btn:active, .app-shell .send-btn:active, .app-shell .mic-btn:active,
+        .app-shell .icon-btn:active, .app-shell .fit-btn:active{ transform:scale(0.94); }
+        @keyframes pageFadeIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+        .page-anim{ animation:pageFadeIn .32s cubic-bezier(.2,.8,.2,1); }
 
         /* Sidebar */
         .sidebar{
@@ -925,7 +970,7 @@ export default function App() {
         .user-sub{ font-size:11.5px; color:var(--md-ink-muted); }
         .signout-btn{
           display:flex; align-items:center; gap:7px; padding:8px 12px; border-radius:999px;
-          border:1px solid var(--md-outline); background:#FAFCFC; color:var(--md-ink-muted); font-size:12px; font-weight:600;
+          border:1px solid var(--md-outline); background:#FAFCFC; color:var(--md-ink-primary); font-size:12px; font-weight:600;
           transition:all .15s ease;
         }
         .signout-btn:hover{ background:#FDF2F2; color:#991B1B; border-color:#F9D5D5; }
@@ -933,12 +978,15 @@ export default function App() {
         /* Topbar */
         .main-col{ flex:1; display:flex; flex-direction:column; min-width:0; margin-left:240px; }
         .topbar{
-          display:flex; align-items:center; justify-content:space-between; padding:16px 36px;
+          display:flex; align-items:center; justify-content:space-between; padding:16px 36px; gap:12px;
           border-bottom:1px solid var(--md-outline); background:rgba(247,249,250,0.92); backdrop-filter:blur(8px);
           position:sticky; top:0; z-index:9;
         }
-        .topbar-title{ font-family:var(--font-head); font-weight:700; font-size:18px; color:var(--md-ink-primary); }
-        .topbar-actions{ display:flex; align-items:center; gap:12px; position:relative; }
+        .topbar-title{
+          font-family:var(--font-head); font-weight:700; font-size:18px; color:var(--md-ink-primary);
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+        }
+        .topbar-actions{ display:flex; align-items:center; gap:12px; position:relative; flex-shrink:0; }
 
         /* Material 3 Language Selector Pill */
         .lang-pill-container{
@@ -974,7 +1022,7 @@ export default function App() {
           border-radius:20px; box-shadow:var(--shadow-soft); z-index:21; overflow:hidden;
         }
         .notif-panel-head{ display:flex; align-items:center; justify-content:space-between; padding:15px 18px; border-bottom:1px solid var(--md-outline); font-family:var(--font-head); font-weight:700; font-size:13.5px; color:var(--md-ink-primary); }
-        .notif-panel-head button{ background:none; border:none; color:var(--md-ink-muted); }
+        .notif-panel-head button{ background:none; border:none; color:var(--md-ink-primary); }
         .notif-panel ul{ max-height:300px; overflow-y:auto; }
         .notif-panel li{ display:flex; gap:10px; padding:12px 18px; border-bottom:1px solid var(--md-outline); cursor:pointer; }
         .notif-panel li:last-child{ border-bottom:none; }
@@ -1002,14 +1050,14 @@ export default function App() {
         .welcome-card h1{ color:#fff; font-size:25px; font-weight:800; }
         .muted{ color:rgba(235,244,246,0.9); font-size:14px; margin-top:5px; }
         .quick-actions{ display:flex; gap:10px; flex-wrap:wrap; }
-        .qa-btn{
+        .app-shell .qa-btn{
           display:inline-flex; align-items:center; gap:8px; padding:11px 18px; border-radius:999px;
           font-weight:700; font-size:13px; background:#fff; color:var(--md-primary); border:none;
           transition:all .18s ease;
         }
-        .qa-btn:hover{ transform:translateY(-1px); background:var(--md-surface-container-high); }
-        .qa-btn.primary{ background:var(--md-primary-container); color:var(--md-on-primary-container); }
-        .qa-btn.primary:hover{ background:#fff; }
+        .app-shell .qa-btn:hover{ transform:translateY(-1px); background:var(--md-surface-container-high); }
+        .app-shell .qa-btn.primary{ background:var(--md-primary-container); color:var(--md-on-primary-container); }
+        .app-shell .qa-btn.primary:hover{ background:#fff; }
 
         .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:26px; }
         .stat-card{
@@ -1049,7 +1097,7 @@ export default function App() {
         .chat-toolbar-right{ display:flex; align-items:center; gap:8px; }
         .tool-btn{
           display:flex; align-items:center; gap:6px; border:1px solid var(--md-outline); background:#fff; border-radius:999px;
-          padding:7px 14px; font-size:12px; font-weight:600; color:var(--md-ink-muted); transition:all .18s ease;
+          padding:7px 14px; font-size:12px; font-weight:600; color:var(--md-ink-primary); transition:all .18s ease;
         }
         .tool-btn:hover{ background:var(--md-surface-container-high); color:var(--md-primary); }
         .tool-btn.on{ background:var(--md-primary-container); color:var(--md-on-primary-container); border-color:transparent; }
@@ -1072,7 +1120,7 @@ export default function App() {
 
         .msg-footer{ display:flex; align-items:center; gap:8px; margin-top:10px; padding-top:8px; border-top:1px dashed var(--md-outline); }
         .msg-action-btn{
-          display:inline-flex; align-items:center; gap:5px; border:none; background:none; color:var(--md-ink-muted);
+          display:inline-flex; align-items:center; gap:5px; border:none; background:none; color:var(--md-ink-primary);
           font-size:12px; font-weight:600; padding:4px 8px; border-radius:6px; cursor:pointer; transition:all .15s ease;
         }
         .msg-action-btn:hover{ background:var(--md-primary-container); color:var(--md-on-primary-container); }
@@ -1125,6 +1173,8 @@ export default function App() {
         .spin{ animation:spin 1s linear infinite; color:var(--md-primary); }
         .ok{ color:#2A5F85; }
         .err{ color:#C74D4D; }
+        .table-scroll{ overflow-x:auto; margin:16px 0; -webkit-overflow-scrolling:touch; }
+        .table-scroll .marker-table{ margin:0; min-width:420px; }
         .marker-table{ width:100%; border-collapse:collapse; margin:16px 0; font-size:13.5px; }
         .marker-table th{ text-align:left; font-size:11.5px; text-transform:uppercase; letter-spacing:0.06em; color:var(--md-ink-muted); padding:9px 8px; border-bottom:1px solid var(--md-outline); }
         .marker-table td{ padding:11px 8px; border-bottom:1px solid var(--md-outline); color:var(--md-ink-primary); }
@@ -1220,7 +1270,22 @@ export default function App() {
         .event-log li strong{ color:var(--md-ink-primary); width:170px; flex-shrink:0; }
         .event-log li span:last-child{ color:var(--md-ink-muted); }
 
-        @media (max-width:900px){
+        .menu-toggle-btn{
+          display:none; flex-direction:column; align-items:center; justify-content:center; gap:4px;
+          width:38px; height:38px; border-radius:12px; border:1px solid var(--md-outline); background:#fff;
+          flex-shrink:0; transition:all .18s ease;
+        }
+        .menu-toggle-btn span{ width:16px; height:2px; border-radius:2px; background:var(--md-ink-primary); transition:all .2s ease; }
+        .menu-toggle-btn:hover{ background:var(--md-surface-container-high); border-color:var(--md-primary); }
+        .topbar-left{ display:flex; align-items:center; gap:12px; min-width:0; }
+        .sidebar-backdrop{
+          display:none; position:fixed; inset:0; background:rgba(2,24,46,0.42); z-index:15;
+          animation:fadeIn .2s ease;
+        }
+        @keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
+
+        /* Tablet: collapse sidebar to icon rail */
+        @media (max-width:900px) and (min-width:641px){
           .sidebar{ width:68px; padding:16px 8px; }
           .main-col{ margin-left:68px; }
           .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{ display:none; }
@@ -1228,16 +1293,65 @@ export default function App() {
           .brand{ justify-content:center; padding-bottom:18px; }
           .nav-item{ justify-content:center; }
           .user-chip{ justify-content:center; }
+        }
+        @media (max-width:900px){
           .stat-grid{ grid-template-columns:repeat(2,1fr); }
           .page{ padding:20px 16px 40px; }
           .twin-grid{ grid-template-columns:1fr; }
           .clinician-grid{ grid-template-columns:1fr; }
           .guest-banner span{ display:none; }
         }
+
+        /* Phone: sidebar becomes an off-canvas drawer */
+        @media (max-width:640px){
+          .menu-toggle-btn{ display:flex; }
+          .sidebar-backdrop{ display:block; }
+          .sidebar{
+            width:250px; max-width:82vw; padding:20px 14px; transform:translateX(-100%);
+            transition:transform .28s cubic-bezier(.4,0,.2,1); z-index:16; box-shadow:0 0 0 rgba(0,0,0,0);
+          }
+          .sidebar.mobile-open{ transform:translateX(0); box-shadow:0 12px 40px rgba(2,24,46,0.25); }
+          .brand span:last-child, .nav-item span, .user-name, .user-sub, .signout-btn span{ display:inline; }
+          .nav-section-label{ display:block; }
+          .brand{ justify-content:flex-start; }
+          .nav-item{ justify-content:flex-start; }
+          .user-chip{ justify-content:flex-start; }
+          .main-col{ margin-left:0; }
+          .topbar{ padding:12px 16px; gap:10px; }
+          .topbar-title{ font-size:15.5px; }
+          .topbar-actions{ gap:8px; }
+          .lang-pill-container{ padding:4px 8px; }
+          .lang-pill-container select{ max-width:26vw; text-overflow:ellipsis; white-space:nowrap; overflow:hidden; }
+          .page{ padding:16px 14px 32px; }
+          .welcome-card{ padding:22px 20px; border-radius:20px; }
+          .welcome-card h1{ font-size:20px; }
+          .notif-panel{ width:min(330px, 90vw); right:-8px; }
+        }
+
+        @media (max-width:480px){
+          .stat-grid{ grid-template-columns:1fr 1fr; gap:10px; }
+          .stat-card{ padding:14px; }
+          .quick-actions{ width:100%; }
+          .qa-btn{ flex:1; justify-content:center; }
+          .lab-chart-row{ grid-template-columns:74px 1fr 52px; gap:8px; }
+          .lab-chart-label{ font-size:11px; }
+          .lab-chart-value{ font-size:11px; }
+          .event-log li{ flex-wrap:wrap; }
+          .event-log li strong{ width:100%; }
+          .marker-table{ font-size:12px; }
+          .marker-table th, .marker-table td{ padding:8px 5px; }
+          .chat-window{ padding:14px; }
+          .chat-input-row{ padding:10px 14px; }
+          .chip-row{ padding:0 14px 12px; }
+          .chat-disclaimer{ padding:7px 14px; }
+        }
       `}</style>
 
+      {/* Mobile nav backdrop */}
+      {mobileNavOpen && <div className="sidebar-backdrop" onClick={() => setMobileNavOpen(false)} />}
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${mobileNavOpen ? "mobile-open" : ""}`}>
         <div className="brand">
           <span className="brand-mark"><HeartPulse size={17} /></span>
           <span>NARI</span>
@@ -1287,7 +1401,19 @@ export default function App() {
       {/* Main Column */}
       <div className="main-col">
         <header className="topbar">
-          <div className="topbar-title">{t(activePage) || activePage}</div>
+          <div className="topbar-left">
+            <button
+              className="menu-toggle-btn"
+              onClick={() => setMobileNavOpen((v) => !v)}
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileNavOpen}
+            >
+              <span />
+              <span />
+              <span />
+            </button>
+            <div className="topbar-title">{t(activePage) || activePage}</div>
+          </div>
           <div className="topbar-actions">
             {/* Multilingual Selector */}
             <div className="lang-pill-container" title="Select Indian Language">
@@ -1346,7 +1472,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="page">
+        <main className="page page-anim" key={activePage}>
           {activePage === "dashboard" && (
             <>
               <section className="welcome-card">
@@ -1569,6 +1695,21 @@ export default function App() {
                         </div>
                       )}
 
+                      {m.followUpQuestions && m.followUpQuestions.length > 0 && (
+                        <div className="chip-row" style={{ padding: "10px 0 0" }}>
+                          {m.followUpQuestions.map((q, i) => (
+                            <button
+                              key={i}
+                              className="chip"
+                              disabled={isTyping}
+                              onClick={() => handleSend(q)}
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
                       {m.sender === "assistant" && (
                         <div className="msg-footer">
                           <button className="msg-action-btn" onClick={() => copyMessage(m.id, m.text)}>
@@ -1667,19 +1808,21 @@ export default function App() {
                   {scanState === "done" && scanResult && (
                     <>
                       <LabReportChart metrics={scanResult.metrics} />
-                      <table className="marker-table">
-                        <thead><tr><th>Biomarker</th><th>Value</th><th>Unit</th><th>Reference Status</th></tr></thead>
-                        <tbody>
-                          {scanResult.metrics.map((m, i) => (
-                            <tr key={`${m.biomarker_name}-${i}`}>
-                              <td><strong>{m.biomarker_name}</strong>{m.extracted_abbreviation ? ` (${m.extracted_abbreviation})` : ""}</td>
-                              <td>{m.value}</td>
-                              <td>{m.unit || "—"}</td>
-                              <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Observation"}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div className="table-scroll">
+                        <table className="marker-table">
+                          <thead><tr><th>Biomarker</th><th>Value</th><th>Unit</th><th>Reference Status</th></tr></thead>
+                          <tbody>
+                            {scanResult.metrics.map((m, i) => (
+                              <tr key={`${m.biomarker_name}-${i}`}>
+                                <td><strong>{m.biomarker_name}</strong>{m.extracted_abbreviation ? ` (${m.extracted_abbreviation})` : ""}</td>
+                                <td>{m.value}</td>
+                                <td>{m.unit || "—"}</td>
+                                <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Observation"}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                       <button className="qa-btn" onClick={resetScan} style={{ border: "1px solid var(--md-outline)", marginTop: "10px" }}>
                         Scan another document <ChevronRight size={13} />
                       </button>
@@ -1754,18 +1897,20 @@ export default function App() {
                   {scanResult ? (
                     <>
                       <LabReportChart metrics={scanResult.metrics} />
-                      <table className="marker-table">
-                        <thead><tr><th>Biomarker</th><th>Value</th><th>Status</th></tr></thead>
-                        <tbody>
-                          {scanResult.metrics.slice(0, 5).map((m, i) => (
-                            <tr key={`${m.biomarker_name}-${i}`}>
-                              <td>{m.biomarker_name}</td>
-                              <td>{m.value} {m.unit || ""}</td>
-                              <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Observation"}</span></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div className="table-scroll">
+                        <table className="marker-table">
+                          <thead><tr><th>Biomarker</th><th>Value</th><th>Status</th></tr></thead>
+                          <tbody>
+                            {scanResult.metrics.slice(0, 5).map((m, i) => (
+                              <tr key={`${m.biomarker_name}-${i}`}>
+                                <td>{m.biomarker_name}</td>
+                                <td>{m.value} {m.unit || ""}</td>
+                                <td><span className={`flag-pill ${(STATUS_TO_FLAG[m.status] || "flagged").toLowerCase()}`}>{STATUS_TO_FLAG[m.status] || "Observation"}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </>
                   ) : (
                     <p className="muted-sm" style={{ color: "var(--md-ink-muted)", fontSize: "13px" }}>

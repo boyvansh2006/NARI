@@ -203,6 +203,12 @@ _RULES: list[tuple[list[str], str, bool, str]] = [
 
 
 def _template_agent_response(message: str) -> AgentReply:
+    from app.agents.nodes import detect_smalltalk
+
+    smalltalk_reply = detect_smalltalk(message)
+    if smalltalk_reply:
+        return AgentReply(agent="Companion", reply=smalltalk_reply, urgent=False)
+
     text = message.lower()
     for keywords, agent, urgent, reply in _RULES:
         if any(word in text for word in keywords):
@@ -224,8 +230,14 @@ def get_agent_reply(
     profile: HealthProfile | None = None,
     recent_report_summary: str | None = None,
 ) -> AgentReply:
+    from app.agents.nodes import detect_smalltalk
+
     settings = get_settings()
     history = history or []
+
+    smalltalk_reply = detect_smalltalk(message)
+    if smalltalk_reply:
+        return AgentReply(agent="Companion", reply=smalltalk_reply, urgent=False)
 
     if settings.groq_api_key:
         try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MenstrualCycleCreate(BaseModel):
@@ -15,6 +15,12 @@ class MenstrualCycleCreate(BaseModel):
     symptoms: str | None = None
     source: str = "user"
 
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "MenstrualCycleCreate":
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be before start_date")
+        return self
+
 
 class MenstrualCycleUpdate(BaseModel):
     start_date: date | None = None
@@ -23,6 +29,15 @@ class MenstrualCycleUpdate(BaseModel):
     flow: str | None = None
     pain_severity: int | None = Field(default=None, ge=0, le=10)
     symptoms: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_date_range(self) -> "MenstrualCycleUpdate":
+        # Only meaningful when both are present in the same partial update -
+        # a patch that only changes one side is checked against the
+        # existing row instead, in api/cycles.py's update_cycle_log.
+        if self.start_date is not None and self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("end_date cannot be before start_date")
+        return self
 
 
 class MenstrualCycleRead(BaseModel):

@@ -145,6 +145,8 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest, lang, onL
         }
         .land-shell section{ position:relative; }
         .land-shell button{ font-family:inherit; }
+        .land-shell button:active{ transform:scale(0.96); }
+        .land-shell a:focus-visible, .land-shell button:focus-visible{ outline:2px solid var(--md-primary); outline-offset:2px; }
 
         /* --- M3 Navigation Bar --- */
         .land-nav{
@@ -300,6 +302,33 @@ export default function LandingPage({ onGetStarted, onSignIn, onGuest, lang, onL
           .land-feature-grid{ grid-template-columns:1fr; }
           .land-features, .land-pipeline-sec{ padding:56px 20px; }
           .land-final-cta{ padding:48px 24px; }
+        }
+
+        @media (max-width:520px){
+          .land-nav{ padding:12px 16px; gap:8px; }
+          .land-brand{ font-size:16px; }
+          .land-nav-actions{ gap:8px; flex-wrap:nowrap; }
+          .land-nav-actions .lang-pill-container{ display:none; }
+          .land-link-btn{ padding:8px 6px; font-size:13px; }
+          .land-cta-btn{ padding:9px 15px; font-size:12.5px; }
+          .land-hero{ padding:40px 16px 32px; }
+          .land-hero h1{ font-size:27px; }
+          .land-hero p.lead{ font-size:14.5px; }
+          .land-hero-actions{ flex-direction:column; align-items:stretch; }
+          .land-primary-btn, .land-secondary-btn{ justify-content:center; }
+          .land-trust-row{ gap:14px; }
+          .land-mock{ padding:20px; }
+          .land-stats-row{ grid-template-columns:1fr 1fr; gap:12px; }
+          .land-stat{ padding:18px 14px; }
+          .land-stat strong{ font-size:24px; }
+          .land-section-head h2{ font-size:24px; }
+          .land-pipeline-step{ gap:16px; }
+          .land-final-cta h2{ font-size:24px; }
+          .land-final-actions{ flex-direction:column; align-items:stretch; }
+          .land-footer{ padding:40px 20px 22px; }
+          .land-footer-top{ gap:28px; }
+          .land-footer-links{ gap:28px; }
+          .land-footer-bottom{ flex-direction:column; gap:8px; }
         }
       `}</style>
 

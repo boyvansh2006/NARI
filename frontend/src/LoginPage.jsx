@@ -38,6 +38,12 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
           min-height:100vh; display:flex; font-family:'Plus Jakarta Sans','DM Sans',-apple-system,sans-serif; background:#F7F9FA;
         }
         .login-shell *{ box-sizing:border-box; }
+        .login-back-btn-mobile{
+          display:none; align-items:center; gap:7px; background:#EDF3F5; border:1px solid #D5DFE2; color:#022F56;
+          border-radius:999px; padding:8px 16px; font-size:12.5px; font-weight:700; cursor:pointer;
+          transition:all .18s ease; margin-bottom:18px; align-self:flex-start;
+        }
+        .login-back-btn-mobile:hover{ background:#CCDEE4; }
         .login-visual{
           flex:1.1; background:linear-gradient(160deg,#02182E 0%,#022F56 60%,#234D6D 100%);
           display:flex; flex-direction:column; align-items:center; justify-content:center; color:#fff;
@@ -122,7 +128,14 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
         .login-foot{ text-align:center; margin-top:28px; font-size:12.5px; color:#6B7F8B; display:flex; align-items:center; justify-content:center; gap:7px; }
         .spinner{ width:16px; height:16px; border:2px solid rgba(255,255,255,0.4); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
         @keyframes spin{ to{ transform:rotate(360deg); } }
-        @media (max-width:820px){ .login-visual{ display:none; } }
+        @media (max-width:820px){
+          .login-visual{ display:none; }
+          .login-back-btn-mobile{ display:inline-flex; }
+        }
+        @media (max-width:480px){
+          .login-form-side{ padding:32px 20px; }
+          .login-visual{ padding:32px 24px; }
+        }
       `}</style>
 
       <div className="login-visual">
@@ -143,8 +156,13 @@ export default function LoginPage({ onSignIn, onGuest, onBack, lang, onLangChang
 
       <div className="login-form-side">
         <div className="login-card">
+          {onBack && (
+            <button className="login-back-btn-mobile" onClick={onBack}>
+              <ArrowLeft size={14} /> Back to overview
+            </button>
+          )}
           <div className="login-brand" style={{ justifyContent: "space-between", width: "100%" }}>
-            <div style={{ display: "flex", align_items: "center", gap: "10px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <span className="login-brand-mark"><HeartPulse size={18} /></span>
               <span>NARI</span>
             </div>

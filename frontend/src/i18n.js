@@ -54,7 +54,7 @@ export const TRANSLATIONS = {
       "I have mild pelvic cramps today",
       "Check my medication safety",
     ],
-    initial_assistant_greeting: "Hello! I am NARI, your personal health companion. Take a comfortable moment — how can I help you today? You can ask about physical symptoms, menstrual cycle phases, lab reports, or nutrition.",
+    initial_assistant_greeting: "Hi there! I'm NARI, your personal health companion, so happy you're here 💛 Take a comfortable moment — what's on your mind today? You can ask me about physical symptoms, menstrual cycle phases, lab reports, or nutrition, whatever feels right.",
   },
   hi: {
     dashboard: "डैशबोर्ड",

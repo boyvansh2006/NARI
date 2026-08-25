@@ -133,6 +133,109 @@ def node_emergency_check(state: GraphState) -> GraphState:
 
 
 # ---------------------------------------------------------------------------
+# Small Talk / Greeting Short-Circuit
+# ---------------------------------------------------------------------------
+#
+# BUG FIX ("hello" got answered like a clinical question): the router
+# always picks ONE specialist from AGENT_ROSTER, and every specialist
+# prompt assumes the message is a health question. There was no concept
+# of small talk anywhere in the graph, so a bare "hello" fell through to
+# "Clinical Knowledge Retrieval" (nothing else matched) and returned a
+# generic "could you share more detail?" fallback - technically correct
+# per its instructions, just not what a person saying hi expects.
+#
+# This node runs right after the emergency check (safety still comes
+# first) and only fires for short, unambiguous small talk - greetings,
+# thanks, goodbyes, "how are you" - so it never intercepts an actual
+# health message that merely starts with a pleasantry ("hi, I've had
+# cramps for 2 days" does NOT match; only "hi"/"hi!"/"hi there" does).
+# On a match it answers directly and the graph skips straight to END,
+# same shortcut Emergency Escalation already uses, since there's no
+# specialist content needed for "hello".
+
+import random
+import re
+
+_GREETING_RE = re.compile(
+    r"^(hi+|hello+|hey+|heya|hiya|yo|namaste|good\s?morning|good\s?afternoon|"
+    r"good\s?evening|morning|evening)(\s+(there|nari|everyone|team))?[\s!.,]*$",
+    re.IGNORECASE,
+)
+_HOW_ARE_YOU_RE = re.compile(
+    r"^(how\s*(are|r)\s*(you|u|ya)|what'?s\s*up|sup|how'?s\s*it\s*going)[\s?!.,]*$",
+    re.IGNORECASE,
+)
+_THANKS_RE = re.compile(
+    r"^(thanks?|thank\s*you|thankyou|thx|ty|much\s*appreciated|appreciate\s*it)"
+    r"(\s*(so|very)?\s*much)?[\s!.,]*$",
+    re.IGNORECASE,
+)
+_BYE_RE = re.compile(
+    r"^(bye+|goodbye|good\s?bye|see\s*you|see\s*ya|take\s*care|gtg|talk\s*(later|soon)|"
+    r"catch\s*you\s*later)[\s!.,]*$",
+    re.IGNORECASE,
+)
+_ACK_RE = re.compile(
+    r"^(ok(ay)?|k|cool|alright|got\s*it|sounds?\s*good|great|nice|sure|fine)[\s!.,]*$",
+    re.IGNORECASE,
+)
+
+_GREETING_REPLIES = [
+    "Hi! Good to see you. What's on your mind today - a symptom, a lab result, or something else?",
+    "Hello! I'm here and ready to help. What would you like to talk through?",
+    "Hey there! How can I help you today - symptoms, nutrition, your cycle, anything at all?",
+]
+_HOW_ARE_YOU_REPLIES = [
+    "I'm doing well, thanks for asking! More importantly, how are you feeling today?",
+    "All good on my end! How about you - anything you'd like to check in about?",
+]
+_THANKS_REPLIES = [
+    "You're very welcome! Let me know if anything else comes up.",
+    "Anytime! I'm here whenever you need me.",
+    "Glad that helped. Feel free to ask anything else.",
+]
+_BYE_REPLIES = [
+    "Take care! I'll be here whenever you need me.",
+    "Bye for now - take good care of yourself.",
+    "See you soon! Reach out anytime.",
+]
+_ACK_REPLIES = [
+    "Sounds good! What would you like to look at next?",
+    "Great - let me know what else I can help with.",
+    "Got it. Anything else on your mind?",
+]
+
+_SMALLTALK_PATTERNS: list[tuple[re.Pattern, list[str]]] = [
+    (_HOW_ARE_YOU_RE, _HOW_ARE_YOU_REPLIES),
+    (_THANKS_RE, _THANKS_REPLIES),
+    (_BYE_RE, _BYE_REPLIES),
+    (_GREETING_RE, _GREETING_REPLIES),
+    (_ACK_RE, _ACK_REPLIES),
+]
+
+
+def detect_smalltalk(message: str) -> str | None:
+    """Returns a natural reply if `message` is pure small talk, else None."""
+    normalized = (message or "").strip()
+    if not normalized or len(normalized) > 40:
+        return None
+    for pattern, replies in _SMALLTALK_PATTERNS:
+        if pattern.match(normalized):
+            return random.choice(replies)
+    return None
+
+
+def node_smalltalk_check(state: GraphState) -> GraphState:
+    reply = detect_smalltalk(state.get("message", ""))
+    if reply:
+        state["router_agent"] = "Companion"
+        state["reply"] = reply
+        state["urgent"] = False
+        _log(state, "Companion", "small talk short-circuit", handoff_to=None)
+    return state
+
+
+# ---------------------------------------------------------------------------
 # Router Agent
 # ---------------------------------------------------------------------------
 

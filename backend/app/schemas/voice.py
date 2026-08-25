@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class VoiceConverseResponse(BaseModel):
@@ -12,6 +12,10 @@ class VoiceConverseResponse(BaseModel):
     audio_format: str = "wav"
     tts_available: bool = False
     stt_available: bool = False
+    # See schemas/chat.py's ChatResponse.follow_up_questions - same idea,
+    # threaded through for voice turns so the frontend can offer the same
+    # tappable quick-reply chips after a spoken answer.
+    follow_up_questions: list[str] = Field(default_factory=list)
 
 
 class VoiceStatusResponse(BaseModel):

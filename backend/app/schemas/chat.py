@@ -59,3 +59,7 @@ class ChatResponse(BaseModel):
     care_plan: dict[str, Any] | None = None
     follow_up: dict[str, Any] | None = None
     router_reason: str | None = None
+    # 2-3 short, tappable next-question suggestions (e.g. "Relief tips for
+    # this?") so the frontend can offer them as quick-reply chips instead
+    # of the reply text trying to cover every related sub-topic at once.
+    follow_up_questions: list[str] = Field(default_factory=list)

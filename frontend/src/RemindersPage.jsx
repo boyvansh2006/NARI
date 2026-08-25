@@ -187,7 +187,9 @@ export default function RemindersPage({ onTaken, isGuest }) {
         .rem-form{
           background:#fff; border-radius:20px; padding:24px; box-shadow:0 2px 10px rgba(0,0,0,0.04);
           border:1px solid #E0E8EA; display:grid; grid-template-columns:1fr 1fr; gap:16px;
+          animation:remFormIn .22s ease;
         }
+        @keyframes remFormIn{ from{ opacity:0; transform:translateY(-6px); } to{ opacity:1; transform:translateY(0); } }
         .rem-form-row{ display:flex; flex-direction:column; gap:6px; }
         .rem-form-row.full{ grid-column:1 / -1; }
         .rem-form-row label{ font-size:12.5px; font-weight:600; color:#162736; }
@@ -220,17 +222,38 @@ export default function RemindersPage({ onTaken, isGuest }) {
         
         .rem-check-btn{
           width:38px; height:38px; border-radius:50%; border:1.5px solid #CBD5E1; background:#fff;
-          display:flex; align-items:center; justify-content:center; color:#748C99; flex-shrink:0; transition:all .2s ease; cursor:pointer;
+          display:flex; align-items:center; justify-content:center; color:#022F56; flex-shrink:0; transition:all .2s ease; cursor:pointer;
         }
         .rem-check-btn.done{ background:#2A5F85; border-color:#2A5F85; color:#fff; }
+        .rem-check-btn:hover{ border-color:#2A5F85; transform:translateY(-1px); }
         .rem-delete-btn{
-          width:34px; height:34px; border-radius:50%; border:none; background:none; color:#8A979E;
+          width:34px; height:34px; border-radius:50%; border:none; background:none; color:#4E606D;
           display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:color .18s ease; cursor:pointer;
         }
         .rem-delete-btn:hover{ color:#C74D4D; background:#FEF2F2; }
         .rem-empty{ text-align:center; padding:52px 20px; color:#4E606D; }
         .rem-empty svg{ color:#748C99; margin-bottom:12px; }
         .rem-guest-note{ font-size:12.5px; color:#4E606D; background:#CCDEE4; border-radius:16px; padding:12px 18px; border:1px solid #C0D7DF; line-height:1.5; }
+
+        .reminders-shell button:active{ transform:scale(0.96); }
+        .reminders-shell button, .reminders-shell input, .reminders-shell select{ font-family:inherit; }
+        .reminders-shell *:focus-visible{ outline:2px solid #022F56; outline-offset:2px; border-radius:6px; }
+
+        @media (max-width:640px){
+          .rem-summary{ padding:22px 20px; border-radius:20px; }
+          .rem-summary-text h2{ font-size:17px; }
+          .rem-summary-stat{ padding:10px 16px; }
+          .rem-form{ grid-template-columns:1fr; padding:20px; }
+          .rem-form-actions{ flex-direction:column-reverse; }
+          .rem-form-actions button{ width:100%; justify-content:center; }
+          .rem-card{ padding:16px; gap:12px; flex-wrap:wrap; }
+          .rem-info{ min-width:140px; }
+        }
+
+        @media (max-width:400px){
+          .rem-summary{ flex-direction:column; align-items:flex-start; }
+          .rem-summary > div:last-child{ width:100%; justify-content:space-between; }
+        }
       `}</style>
 
       <div className="rem-summary">

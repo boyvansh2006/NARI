@@ -80,6 +80,12 @@ async def update_cycle_log(
     for field, value in update_data.items():
         setattr(cycle, field, value)
 
+    # Guards the partial-patch case the schema-level validator can't see:
+    # e.g. a patch that only sends a new end_date, checked against the
+    # start_date already stored on this row.
+    if cycle.end_date is not None and cycle.end_date < cycle.start_date:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="end_date cannot be before start_date")
+
     await session.commit()
     await session.refresh(cycle)
     return cycle
@@ -161,19 +167,19 @@ async def get_cycle_analytics(
     # Determine Phase
     if current_day <= avg_period:
         phase = "Menstrual Phase"
-        desc = "Your period is active. Uterine lining is shedding and hormone levels are at baseline."
+        phase_desc = "Your period is active. Uterine lining is shedding and hormone levels are at baseline."
         tip = "Prioritize warmth, soothing herbal teas, rest, and iron-rich meals."
     elif current_day < (avg_cycle - 14):
         phase = "Follicular Phase"
-        desc = "Estrogen is rising, supporting higher physical stamina, mental clarity, and collagen synthesis."
+        phase_desc = "Estrogen is rising, supporting higher physical stamina, mental clarity, and collagen synthesis."
         tip = "Great time for active workouts, complex problem solving, and fresh antioxidant-rich foods."
     elif current_day <= (avg_cycle - 12):
         phase = "Ovulation Phase"
-        desc = "Luteinizing hormone (LH) peaks, releasing a mature egg. Peak energy and high metabolism."
+        phase_desc = "Luteinizing hormone (LH) peaks, releasing a mature egg. Peak energy and high metabolism."
         tip = "Incorporate fiber, hydration, and light cardio to support hormonal balance."
     else:
         phase = "Luteal Phase"
-        desc = "Progesterone rises to support the uterine lining. Body temperature rises slightly."
+        phase_desc = "Progesterone rises to support the uterine lining. Body temperature rises slightly."
         tip = "Focus on grounding foods (magnesium, complex carbohydrates), gentle yoga, and restorative sleep."
 
     next_period = last_cycle.start_date + timedelta(days=avg_cycle)
@@ -186,7 +192,7 @@ async def get_cycle_analytics(
     return CycleAnalytics(
         current_day=current_day,
         current_phase=phase,
-        phase_description=desc,
+        phase_description=phase_desc,
         comfort_tip=tip,
         avg_cycle_length=avg_cycle,
         avg_period_duration=avg_period,

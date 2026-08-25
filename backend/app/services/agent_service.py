@@ -46,6 +46,11 @@ class TurnResult:
     care_plan: dict[str, Any] | None = None
     follow_up: dict[str, Any] | None = None
     router_reason: str | None = None
+    # 2-3 short, tappable next-question suggestions from the specialist
+    # node's reply (see agents/nodes.py) - lets the frontend offer them as
+    # quick-reply chips instead of the agent dumping every related
+    # sub-topic into one oversized answer.
+    follow_up_questions: list[str] = field(default_factory=list)
 
 
 def _history_dicts(history: list[ChatHistoryItem] | None) -> list[dict[str, str]]:
@@ -80,6 +85,7 @@ def _run_graph_sync(
         care_plan=state.get("care_plan"),
         follow_up=state.get("follow_up"),
         router_reason=state.get("router_reason"),
+        follow_up_questions=state.get("follow_up_questions") or [],
     )
 
 
